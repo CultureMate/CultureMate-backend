@@ -1,6 +1,6 @@
 # 🎫 CultureMate · Spring Backend
 
-서울시 문화행사를 날짜·분야·지역으로 찾고, 관심 행사로 모아 두는 Spring Boot API입니다. 화면은 프론트 레포가 담당합니다.
+서울시 문화행사를 날짜·분야·지역으로 찾고, 관심 행사로 모아 두는 Spring Boot API입니다. 화면은 [CultureMate-frontend](https://github.com/CultureMate/CultureMate-frontend)가 담당합니다.
 
 > 🔒 비밀값은 코드나 Git에 넣지 않습니다. `.env.example`을 복사해 `.env`를 만들고 각 값을 채우세요.
 
