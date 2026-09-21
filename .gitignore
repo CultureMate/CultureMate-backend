@@ -8,6 +8,12 @@ data/
 *.trace.db
 .idea/
 *.iml
+.ipr
+.iws
 .vscode/
 .DS_Store
 *.log
+.classpath
+.project
+.settings/
+.apt_generated
