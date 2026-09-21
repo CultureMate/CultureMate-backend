@@ -1,0 +1,13 @@
+.env
+*.env.local
+**/application-local.yml
+target/
+data/
+*.mv.db
+*.lock.db
+*.trace.db
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
