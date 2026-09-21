@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: culturemate.backend
+  datasource:
+    url: jdbc:mariadb://localhost:3306/culturemate
+    username: root
+    password: ${DB_PASSWORD}
+    driver-class-name: org.mariadb.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
