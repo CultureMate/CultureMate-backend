@@ -4,11 +4,15 @@
 
 > 🔒 비밀값은 코드나 Git에 넣지 않습니다. `.env.example`을 복사해 `.env`를 만들고 각 값을 채우세요.
 
+<br>
+
 ## 📌 현재 범위
 
 - ✅ **구현됨:** 서울시 문화행사 목록·상세·필터, 관심 행사(찜), 카카오 로그인·세션, 로컬 H2
 - ⏳ **아직 501:** AI 소개문
 - 📋 **이슈로 남김:** 마이페이지 수정·탈퇴, 상세 보완, 댓글, Google Places, Docker DB
+
+<br>
 
 ## 📚 문서 안내
 
@@ -17,12 +21,16 @@
 - 🔗 [API 계약](./docs/api-contract.md): URL, 요청·응답, 오류 코드
 - 🗂️ ERD: ERDCloud가 원본. 로컬은 H2 + JPA `ddl-auto: update`
 
+<br>
+
 ## ⚙️ 동작 원칙
 
 - 행사 원본은 DB에 저장하지 않습니다. 서울시 API를 호출하고 30분 캐시합니다.
 - 찜은 로그인 없이 헤더 `X-Client-Id` 기준입니다. 회원 이관은 아직 없습니다.
 - 카카오 로그인은 `CULTUREMATE_SESSION` HttpOnly 쿠키(7일)입니다. `/me`·로그아웃은 `credentials: include`가 필요합니다.
 - API 키는 `.env`의 `SEOUL_API_KEY`, `KAKAO_REST_KEY`만 읽습니다.
+
+<br>
 
 ## 🚀 실행
 
@@ -46,6 +54,8 @@ macOS/Linux는 `./mvnw spring-boot:run` 입니다. IntelliJ는 **이 폴더를 �
 - 📱 화면: http://localhost:5175 (`localhost`로 엽니다. `127.0.0.1`이면 카카오 쿠키가 어긋날 수 있습니다)
 
 키가 비면 목록은 `502`, 카카오 시작은 `503`입니다. `.env` · `data/` · `target/` 은 Git에 올리지 않습니다.
+
+<br>
 
 ## 🧪 테스트
 
