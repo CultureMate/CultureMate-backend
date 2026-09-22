@@ -9,6 +9,7 @@ import com.team.cultureevents.features.events.domain.dto.EventSummaryResponseDTO
 import com.team.cultureevents.features.seoul.SeoulEventCache;
 import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
+import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -25,10 +26,12 @@ public class EventService {
 
     private final SeoulOpenApiClient client;
     private final SeoulEventCache cache;
+    private final EventViewRepository eventViewRepository;
 
-    public EventService(SeoulOpenApiClient client, SeoulEventCache cache) {
+    public EventService(SeoulOpenApiClient client, SeoulEventCache cache, EventViewRepository eventViewRepository) {
         this.client = client;
         this.cache = cache;
+        this.eventViewRepository = eventViewRepository;
     }
 
     public EventListResponseDTO list(List<String> districts, List<String> categories, List<String> dates) {
@@ -115,11 +118,14 @@ public class EventService {
 
     private EventDetailResponseDTO toDetail(SeoulEvent e) {
         boolean invalidPeriod = EventDates.inverted(e.startDate(), e.endDate());
+        int viewCount = eventViewRepository.findById(e.eventId())
+                .map(v -> v.getViewCount())
+                .orElse(0);
         return new EventDetailResponseDTO(
                 e.eventId(), e.title(), e.category(), e.district(), e.place(),
                 invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
                 emptyToBlank(e.fee()), emptyToBlank(e.organization()),
-                emptyToBlank(e.originalUrl()), emptyToBlank(e.imageUrl()), null
+                emptyToBlank(e.originalUrl()), emptyToBlank(e.imageUrl()), viewCount
         );
     }
 
