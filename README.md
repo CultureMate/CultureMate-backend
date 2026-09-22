@@ -8,9 +8,9 @@
 
 ## 📌 현재 범위
 
-- ✅ **구현됨:** 서울시 문화행사 목록·상세·필터, 관심 행사(찜), 카카오 로그인·세션, 로컬 H2
+- ✅ **구현됨:** 서울시 문화행사 목록·상세·필터, 관심 행사(찜), 카카오 로그인·세션, 댓글, 로컬 H2
 - ⏳ **아직 501:** AI 소개문
-- 📋 **이슈로 남김:** 마이페이지 수정·탈퇴, 상세 보완, 댓글, Google Places, Docker DB
+- 📋 **이슈로 남김:** 마이페이지 수정·탈퇴, 상세 보완, Google Places, Docker DB
 
 <br>
 
@@ -46,12 +46,12 @@ macOS/Linux는 `cp .env.example .env` 입니다. `.env`에 `SEOUL_API_KEY`를 �
 .\mvnw.cmd spring-boot:run
 ```
 
-macOS/Linux는 `./mvnw spring-boot:run` 입니다. IntelliJ는 **이 폴더를 프로젝트로 열고**, Working directory가 `.env`가 있는 루트여야 합니다.
+macOS/Linux는 `./mvnw spring-boot:run` 입니다. 터미널만 있어도 됩니다. IDE를 쓰면 이 폴더를 프로젝트로 열고, Working directory가 `.env`가 있는 루트여야 합니다.
 
 - 🖥️ API: http://localhost:8080
 - ❤️ 헬스: http://localhost:8080/api/health
 - 📅 목록: http://localhost:8080/api/events?page=0&size=5
-- 📱 화면: http://localhost:5175 (`localhost`로 엽니다. `127.0.0.1`이면 카카오 쿠키가 어긋날 수 있습니다)
+- 📱 화면: http://localhost:3000 (`localhost`로 엽니다. `127.0.0.1`이면 카카오 쿠키가 어긋날 수 있습니다)
 
 키가 비면 목록은 `502`, 카카오 시작은 `503`입니다. `.env` · `data/` · `target/` 은 Git에 올리지 않습니다.
 
