@@ -17,3 +17,6 @@ data/
 .project
 .settings/
 .apt_generated
+.gradle/
+build/
+HELP.md
