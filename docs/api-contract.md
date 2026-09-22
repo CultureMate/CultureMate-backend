@@ -15,6 +15,7 @@
 |------|------|------|
 | `INVALID_PARAM` | 400 | 날짜·페이지·필수값 |
 | `UNAUTHORIZED` | 401 | 세션 없음/만료 |
+| `FORBIDDEN` | 403 | 본인 댓글이 아님 |
 | `NOT_FOUND` | 404 | 행사 또는 찜 없음 |
 | `ALREADY_SAVED` | 409 | 같은 브라우저·같은 행사 중복 찜 |
 | `NOT_IMPLEMENTED` | 501 | AI 소개문 미구현 |
@@ -112,10 +113,24 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 지금: `501 NOT_IMPLEMENTED`. 구현 후 저장본 재사용, 실패 `503`.  
 슬래시 없는 ID는 `POST /api/events/{eventId}/summary`도 있음.
 
-## 6. 아직 없음
+## 6. 댓글 · 완료
 
-마이페이지 수정·탈퇴, 댓글, 조회수 증가, Google Places, HOT/근처 전용 API.  
-만들기 전에 이 문서에 예시부터 적습니다. 마이·댓글은 세션 쿠키를 씁니다.
+작성·수정·삭제는 세션 쿠키 필요. 목록 조회는 공개.
+
+| 메서드 | 경로 | 결과 |
+|--------|------|------|
+| POST | `/api/comments` body `{ "eventId", "content", "parentId?" }` | `201` |
+| GET | `/api/comments?eventId={encoded}` | 배열 (오래된 순) |
+| PUT | `/api/comments/{commentId}` body `{ "content" }` | `200` |
+| DELETE | `/api/comments/{commentId}` | `204` |
+
+응답 항목: `commentId`, `eventId`, `memberId`, `parentId`, `content`, `createdAt`, `updatedAt`.  
+본인 댓글이 아니면 `403 FORBIDDEN`. 세션 없으면 `401`.
+
+## 7. 아직 없음
+
+마이페이지 수정·탈퇴, 조회수 증가, Google Places, HOT/근처 전용 API.  
+만들기 전에 이 문서에 예시부터 적습니다. 마이페이지는 세션 쿠키를 씁니다.
 
 ## 로컬 확인
 
@@ -124,3 +139,4 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 3. 첫 `eventId`로 `GET /api/events/detail?eventId=...`
 4. `X-Client-Id`로 찜 POST → GET → DELETE
 5. 카카오 설정 후 `start` → `/me` → logout
+6. 로그인 후 댓글 POST → GET → PUT → DELETE

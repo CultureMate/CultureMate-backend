@@ -1,9 +1,12 @@
 package com.team.cultureevents.features.comments.service;
 
+import com.team.cultureevents.features.comments.domain.dto.CommentResponseDTO;
 import com.team.cultureevents.features.comments.domain.entity.CommentEntity;
 import com.team.cultureevents.features.comments.repository.CommentRepository;
 import com.team.cultureevents.features.commons.handler.BusinessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,38 +20,49 @@ public class CommentService {
         this.commentRepository = commentRepository;
     }
 
-    public CommentEntity createComment(String eventId, Long memberId, Long parentId, String content) {
-        if (content == null || content.isBlank()) {
-            throw BusinessException.badRequest("댓글 내용을 입력해주세요.");
+    @Transactional
+    public CommentResponseDTO create(String eventId, Long memberId, Long parentId, String content) {
+        if (parentId != null) {
+            CommentEntity parent = commentRepository.findById(parentId)
+                    .orElseThrow(() -> BusinessException.notFound("부모 댓글을 찾을 수 없습니다."));
+            if (!parent.getEventId().equals(eventId)) {
+                throw BusinessException.badRequest("부모 댓글과 행사가 일치하지 않습니다.");
+            }
         }
-        CommentEntity comment = new CommentEntity(eventId, memberId, parentId, content, Instant.now());
-        return commentRepository.save(comment);
+        CommentEntity comment = new CommentEntity(eventId, memberId, parentId, content.trim(), Instant.now());
+        return CommentResponseDTO.from(commentRepository.save(comment));
     }
 
-    public List<CommentEntity> getComments(String eventId) {
-        return commentRepository.findByEventIdOrderByCreatedAtAsc(eventId);
+    @Transactional(readOnly = true)
+    public List<CommentResponseDTO> list(String eventId) {
+        if (eventId == null || eventId.isBlank()) {
+            throw BusinessException.badRequest("eventId는 필수입니다.");
+        }
+        return commentRepository.findByEventIdOrderByCreatedAtAsc(eventId).stream()
+                .map(CommentResponseDTO::from)
+                .toList();
     }
 
-    public CommentEntity updateComment(Long commentId, Long memberId, String content) {
+    @Transactional
+    public CommentResponseDTO update(Long commentId, Long memberId, String content) {
         CommentEntity comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> BusinessException.notFound("댓글을 찾을 수 없습니다."));
-
-        if (!comment.getMemberId().equals(memberId)) {
-            throw BusinessException.badRequest("본인 댓글만 수정할 수 있습니다.");
-        }
-
-        comment.updateContent(content, Instant.now());
-        return comment;
+        requireOwner(comment, memberId);
+        comment.updateContent(content.trim(), Instant.now());
+        return CommentResponseDTO.from(comment);
     }
 
-    public void deleteComment(Long commentId, Long memberId) {
+    @Transactional
+    public void delete(Long commentId, Long memberId) {
         CommentEntity comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> BusinessException.notFound("댓글을 찾을 수 없습니다."));
+        requireOwner(comment, memberId);
+        commentRepository.delete(comment);
+    }
 
+    private static void requireOwner(CommentEntity comment, Long memberId) {
         if (!comment.getMemberId().equals(memberId)) {
-            throw BusinessException.badRequest("본인 댓글만 삭제할 수 있습니다.");
+            throw new BusinessException("FORBIDDEN", "본인 댓글만 수정·삭제할 수 있습니다.", HttpStatus.FORBIDDEN);
         }
-
-        commentRepository.deleteById(commentId);
     }
 }

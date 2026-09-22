@@ -24,9 +24,9 @@ spring:
       path: /h2-console
 
 app:
-  frontend-url: ${FRONTEND_URL:http://localhost:5175}
+  frontend-url: ${FRONTEND_URL:http://localhost:3000}
   cors:
-    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175}
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175}
   seoul-api:
     key: ${SEOUL_API_KEY:}
     base-url: http://openapi.seoul.go.kr:8088
