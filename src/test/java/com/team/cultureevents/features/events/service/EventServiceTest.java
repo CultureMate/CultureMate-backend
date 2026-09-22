@@ -4,6 +4,7 @@ import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.seoul.SeoulEventCache;
 import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
+import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -18,7 +19,8 @@ class EventServiceTest {
 
     private final SeoulOpenApiClient client = mock(SeoulOpenApiClient.class);
     private final SeoulEventCache cache = mock(SeoulEventCache.class);
-    private final EventService service = new EventService(client, cache);
+    private final EventViewRepository eventViewRepository = mock(EventViewRepository.class);
+    private final EventService service = new EventService(client, cache, eventViewRepository);
 
     @Test
     void blankSourceCategoryDoesNotMatchSelectedCategory() {

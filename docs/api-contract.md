@@ -69,7 +69,7 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 
 ### `GET /api/events/detail?eventId={encoded}`
 
-목록 필드 + `fee`, `organization`, `originalUrl`, `viewCount`(지금은 항상 `null`).  
+목록 필드 + `fee`, `organization`, `originalUrl`, `viewCount`(없으면 `0`).  
 슬래시 없는 ID만 `GET /api/events/{eventId}` 가능. URL형 ID는 반드시 query.
 
 ## 3. 카카오 로그인 · 서버 완료
@@ -127,9 +127,21 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 응답 항목: `commentId`, `eventId`, `memberId`, `parentId`, `content`, `createdAt`, `updatedAt`.  
 본인 댓글이 아니면 `403 FORBIDDEN`. 세션 없으면 `401`.
 
-## 7. 아직 없음
+## 7. 조회수 · 완료
 
-마이페이지 수정·탈퇴, 조회수 증가, Google Places, HOT/근처 전용 API.  
+로그인 불필요. 상세 진입 시 FE가 호출. 없는 행사는 `404`.
+
+| 메서드 | 경로 | 결과 |
+|--------|------|------|
+| POST | `/api/events/views?eventId={encoded}` | `200` `{ "eventId", "viewCount" }` |
+| POST | `/api/events/{eventId}/views` | 슬래시 없는 ID용 |
+
+최초 호출은 0에서 시작해 +1(결과 1). 이후 호출마다 +1.  
+상세 `GET /api/events/detail`의 `viewCount`는 저장된 값(없으면 `0`).
+
+## 8. 아직 없음
+
+마이페이지 수정·탈퇴, Google Places, HOT/근처 전용 API.  
 만들기 전에 이 문서에 예시부터 적습니다. 마이페이지는 세션 쿠키를 씁니다.
 
 ## 로컬 확인
@@ -140,3 +152,4 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 4. `X-Client-Id`로 찜 POST → GET → DELETE
 5. 카카오 설정 후 `start` → `/me` → logout
 6. 로그인 후 댓글 POST → GET → PUT → DELETE
+7. `POST /api/events/views?eventId=...` → 상세 `viewCount` 증가 확인
