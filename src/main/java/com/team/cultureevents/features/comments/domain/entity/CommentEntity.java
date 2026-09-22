@@ -10,7 +10,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "comment")
+@Table(name = "event_comment")
 public class CommentEntity {
 
     @Id
