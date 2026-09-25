@@ -1,6 +1,8 @@
 package com.team.cultureevents.features.auth.ctrl;
 
 import com.team.cultureevents.features.auth.domain.entity.MemberEntity;
+import com.team.cultureevents.features.auth.repository.AuthSessionRepository;
+import com.team.cultureevents.features.auth.repository.MemberRepository;
 import com.team.cultureevents.features.auth.service.AuthService;
 import com.team.cultureevents.features.auth.service.CurrentMemberService;
 import com.team.cultureevents.features.commons.config.AppProperties;
@@ -10,8 +12,11 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -29,11 +34,16 @@ public class AuthController {
     private final AuthService auth;
     private final CurrentMemberService currentMember;
     private final AppProperties properties;
+    private final MemberRepository members;
+    private final AuthSessionRepository sessions;
 
-    public AuthController(AuthService auth, CurrentMemberService currentMember, AppProperties properties) {
+    public AuthController(AuthService auth, CurrentMemberService currentMember, AppProperties properties,
+                           MemberRepository members, AuthSessionRepository sessions) {
         this.auth = auth;
         this.currentMember = currentMember;
         this.properties = properties;
+        this.members = members;
+        this.sessions = sessions;
     }
 
     @GetMapping("/kakao/start")
@@ -76,6 +86,35 @@ public class AuthController {
         return new MeResponse(member.getMemberId(), member.getNickname(), member.getResidence());
     }
 
+    @PutMapping("/me")
+    public MeResponse updateMe(@RequestBody UpdateMeRequest request, HttpServletRequest httpRequest) {
+        MemberEntity member = currentMember.requireMember(httpRequest);
+
+        boolean hasNickname = request.nickname() != null && !request.nickname().isBlank();
+        boolean hasResidence = request.residence() != null && !request.residence().isBlank();
+        if (!hasNickname && !hasResidence) {
+            throw BusinessException.badRequest("수정할 닉네임 또는 거주지를 입력해주세요.");
+        }
+
+        member.updateNickname(request.nickname());
+        member.updateResidence(request.residence());
+        members.save(member);
+
+        return new MeResponse(member.getMemberId(), member.getNickname(), member.getResidence());
+    }
+
+    @DeleteMapping("/me")
+    public ResponseEntity<Void> deleteMe(HttpServletRequest request) {
+        MemberEntity member = currentMember.requireMember(request);
+
+        sessions.deleteByMember_MemberId(member.getMemberId());
+        members.delete(member);
+
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, cookie(CurrentMemberService.SESSION_COOKIE, "", "/api", Duration.ZERO, request).toString())
+                .build();
+    }
+
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(HttpServletRequest request) {
         var session = WebUtils.getCookie(request, CurrentMemberService.SESSION_COOKIE);
@@ -104,4 +143,6 @@ public class AuthController {
     }
 
     public record MeResponse(Long memberId, String nickname, String residence) {}
+
+    public record UpdateMeRequest(String nickname, String residence) {}
 }

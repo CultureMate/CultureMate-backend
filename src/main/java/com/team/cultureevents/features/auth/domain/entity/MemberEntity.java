@@ -54,4 +54,10 @@ public class MemberEntity {
             this.updatedAt = Instant.now();
         }
     }
+    public void updateResidence(String residence) {
+    if (residence != null && !residence.isBlank() && !residence.equals(this.residence)) {
+        this.residence = residence;
+        this.updatedAt = Instant.now();
+    }
+}
 }
