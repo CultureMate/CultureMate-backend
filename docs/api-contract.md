@@ -157,9 +157,21 @@ OpenAI 읽기 제한은 30초, 출력은 최대 300토큰입니다. 같은 행�
 
 수정 시 값이 없거나 기존과 같으면 그 필드는 변경하지 않음. 둘 다 없으면 `400 INVALID_PARAM`. 닉네임·거주지는 50자 이하이고, 넘으면 `400 INVALID_PARAM`.
 
-## 9. 아직 없음
+## 9. 홈 HOT / 근처 · 완료
 
-Google Places, HOT/근처 전용 API.
+로그인 불필요. `district` 쿼리는 보내지 않으며, 지금은 서울 전체 기준입니다.  
+거주지(쿠키) 반영은 후속. `limit` 기본 6, 범위 1~30.
+
+| 메서드 | 경로 | 결과 |
+|--------|------|------|
+| GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순 |
+| GET | `/api/main/upcoming-events?limit=6` | `200` `{ "events": [...] }` 시작일 오름차순(종료되지 않은 행사) |
+
+각 항목: `eventId`, `title`, `category`, `district`, `place`, `startDate`, `endDate`, `imageUrl`, `viewCount`, `dDay`(한국 날짜 기준, 시작일 없으면 `null`).
+
+## 10. 아직 없음
+
+Google Places.
 
 ## 로컬 확인
 
@@ -170,3 +182,4 @@ Google Places, HOT/근처 전용 API.
 5. 카카오 설정 후 `start` → `/me` → logout
 6. 로그인 후 댓글 POST → GET → PUT → DELETE
 7. `POST /api/events/views?eventId=...` → 상세 `viewCount` 증가 확인
+8. `GET /api/main/hot-events?limit=6` · `GET /api/main/upcoming-events?limit=6`
