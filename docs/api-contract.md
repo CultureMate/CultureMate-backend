@@ -144,10 +144,21 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 최초 호출은 0에서 시작해 +1(결과 1). 이후 호출마다 +1.  
 상세 `GET /api/events/detail`의 `viewCount`는 저장된 값(없으면 `0`).
 
-## 8. 아직 없음
+## 8. 마이페이지 · 완료
 
-마이페이지 수정·탈퇴, Google Places, HOT/근처 전용 API.  
-만들기 전에 이 문서에 예시부터 적습니다. 마이페이지는 세션 쿠키를 씁니다.
+세션 쿠키 필요. 없으면 `401`.
+
+| 메서드 | 경로 | 결과 |
+|--------|------|------|
+| GET | `/api/auth/me` | `{ memberId, nickname, residence }` |
+| PUT | `/api/auth/me` body `{ "nickname"?, "residence"? }` | `200` 수정된 정보 |
+| DELETE | `/api/auth/me` | `204`. 세션·회원 삭제, 쿠키 만료 |
+
+수정 시 값이 없거나 기존과 같으면 그 필드는 변경하지 않음. 둘 다 없으면 `400 INVALID_PARAM`. 닉네임·거주지는 50자 이하이고, 넘으면 `400 INVALID_PARAM`.
+
+## 9. 아직 없음
+
+Google Places, HOT/근처 전용 API.
 
 ## 로컬 확인
 

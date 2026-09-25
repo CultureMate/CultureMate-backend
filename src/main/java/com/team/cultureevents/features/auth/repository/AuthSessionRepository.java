@@ -10,4 +10,6 @@ public interface AuthSessionRepository extends JpaRepository<AuthSessionEntity, 
     @Override
     @EntityGraph(attributePaths = "member")
     Optional<AuthSessionEntity> findById(String sessionId);
+
+    void deleteByMember_MemberId(Long memberId);
 }
