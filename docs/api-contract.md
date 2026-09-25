@@ -117,6 +117,7 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 
 저장본이 있으면 그대로 반환하고, 없으면 OpenAI로 생성 후 저장합니다.
 생성 실패(키 미설정, 호출 실패 등)는 `AI_UNAVAILABLE` `503`.
+OpenAI 읽기 제한은 30초, 출력은 최대 300토큰입니다. 같은 행사를 동시에 요청하면 한 번만 생성하고, 나머지는 저장된 소개문을 반환합니다.
 
 ## 6. 댓글 · 완료
 

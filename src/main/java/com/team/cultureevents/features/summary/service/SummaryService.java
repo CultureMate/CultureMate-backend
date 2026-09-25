@@ -6,9 +6,11 @@ import com.team.cultureevents.features.summary.OpenAiClient;
 import com.team.cultureevents.features.summary.domain.dto.SummaryResponseDTO;
 import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
 import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 행사 AI 소개문. 저장된 게 있으면 재사용하고, 없으면 OpenAI로 생성 후 저장한다.
@@ -19,6 +21,7 @@ public class SummaryService {
     private final AiSummaryRepository aiSummaryRepository;
     private final EventService eventService;
     private final OpenAiClient openAiClient;
+    private final ConcurrentHashMap<String, Object> locks = new ConcurrentHashMap<>();
 
     public SummaryService(AiSummaryRepository aiSummaryRepository,
                            EventService eventService,
@@ -35,6 +38,16 @@ public class SummaryService {
     }
 
     private SummaryResponseDTO generateAndSave(String eventId) {
+        synchronized (locks.computeIfAbsent(eventId, id -> new Object())) {
+            var saved = aiSummaryRepository.findById(eventId);
+            if (saved.isPresent()) {
+                return SummaryResponseDTO.fromEntity(saved.get());
+            }
+            return generateAndSaveLocked(eventId);
+        }
+    }
+
+    private SummaryResponseDTO generateAndSaveLocked(String eventId) {
         // eventId가 존재하지 않으면 EventService가 404를 던짐
         EventDetailResponseDTO event = eventService.getDetail(eventId);
 
@@ -61,8 +74,13 @@ public class SummaryService {
         String summary = openAiClient.chat(systemPrompt, userPrompt);
 
         AiSummaryEntity entity = new AiSummaryEntity(eventId, summary, Instant.now());
-        aiSummaryRepository.save(entity);
-
-        return SummaryResponseDTO.fromEntity(entity);
+        try {
+            aiSummaryRepository.save(entity);
+            return SummaryResponseDTO.fromEntity(entity);
+        } catch (DataIntegrityViolationException duplicated) {
+            return aiSummaryRepository.findById(eventId)
+                    .map(SummaryResponseDTO::fromEntity)
+                    .orElseThrow(() -> duplicated);
+        }
     }
 }

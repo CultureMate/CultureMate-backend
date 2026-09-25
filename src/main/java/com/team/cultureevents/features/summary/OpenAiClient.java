@@ -6,11 +6,13 @@ import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -22,16 +24,30 @@ import java.util.Map;
 @Component
 public class OpenAiClient {
 
-    private static final String ENDPOINT = "https://api.openai.com/v1/chat/completions";
+    static final String ENDPOINT = "https://api.openai.com/v1/chat/completions";
+    static final int MAX_OUTPUT_TOKENS = 300;
+    static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
 
     private final AppProperties props;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
     public OpenAiClient(AppProperties props, RestClient.Builder builder, ObjectMapper objectMapper) {
+        this(props, openAiRestClient(builder), objectMapper);
+    }
+
+    OpenAiClient(AppProperties props, RestClient restClient, ObjectMapper objectMapper) {
         this.props = props;
-        this.restClient = builder.build();
+        this.restClient = restClient;
         this.objectMapper = objectMapper;
+    }
+
+    /** 공통 RestClient(읽기 5초)와 분리한다. OpenAI만 읽기 30초. */
+    private static RestClient openAiRestClient(RestClient.Builder builder) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofSeconds(2));
+        requestFactory.setReadTimeout(READ_TIMEOUT);
+        return builder.clone().requestFactory(requestFactory).build();
     }
 
     /** system/user 프롬프트를 보내고, 응답 message.content 텍스트만 돌려준다. */
@@ -43,6 +59,7 @@ public class OpenAiClient {
 
         Map<String, Object> body = Map.of(
                 "model", props.openai().model(),
+                "max_tokens", MAX_OUTPUT_TOKENS,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt),
                         Map.of("role", "user", "content", userPrompt)
