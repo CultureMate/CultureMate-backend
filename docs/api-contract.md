@@ -18,9 +18,9 @@
 | `FORBIDDEN` | 403 | 본인 댓글이 아님 |
 | `NOT_FOUND` | 404 | 행사 또는 찜 없음 |
 | `ALREADY_SAVED` | 409 | 같은 브라우저·같은 행사 중복 찜 |
-| `NOT_IMPLEMENTED` | 501 | AI 소개문 미구현 |
 | `UPSTREAM_UNAVAILABLE` | 502 | 서울시 API 실패 |
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
+| `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
 
 ## 1. 헬스 · 완료
 
@@ -106,12 +106,18 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 
 응답 항목: `eventId`, `title`, `startDate`, `endDate`, `place`, `savedAt`. 날짜가 비정상이면 `null`일 수 있음.
 
-## 5. AI 소개문 · 미구현
+## 5. AI 소개문 · 완료
 
-`POST /api/events/summary?eventId={encoded}`  
-목표 응답: `{ "eventId", "summary", "createdAt" }`  
-지금: `501 NOT_IMPLEMENTED`. 구현 후 저장본 재사용, 실패 `503`.  
-슬래시 없는 ID는 `POST /api/events/{eventId}/summary`도 있음.
+행사 상세 정보를 바탕으로 소개문을 생성합니다. 저장된 소개문이 있으면 재사용합니다.
+
+| 메서드 | 경로 | 결과 |
+|--------|------|------|
+| POST | `/api/events/summary?eventId={encoded}` | `200` `{ "eventId", "summary", "createdAt" }` |
+| POST | `/api/events/{eventId}/summary` | 슬래시 없는 ID용 |
+
+저장본이 있으면 그대로 반환하고, 없으면 OpenAI로 생성 후 저장합니다.
+생성 실패(키 미설정, 호출 실패 등)는 `AI_UNAVAILABLE` `503`.
+OpenAI 읽기 제한은 30초, 출력은 최대 300토큰입니다. 같은 행사를 동시에 요청하면 한 번만 생성하고, 나머지는 저장된 소개문을 반환합니다.
 
 ## 6. 댓글 · 완료
 
