@@ -149,7 +149,7 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 | PUT | `/api/auth/me` body `{ "nickname"?, "residence"? }` | `200` 수정된 정보 |
 | DELETE | `/api/auth/me` | `204`. 세션·회원 삭제, 쿠키 만료 |
 
-수정 시 값이 없거나 기존과 같으면 그 필드는 변경하지 않음. 둘 다 없으면 `400 INVALID_PARAM`.
+수정 시 값이 없거나 기존과 같으면 그 필드는 변경하지 않음. 둘 다 없으면 `400 INVALID_PARAM`. 닉네임·거주지는 50자 이하이고, 넘으면 `400 INVALID_PARAM`.
 
 ## 9. 아직 없음
 

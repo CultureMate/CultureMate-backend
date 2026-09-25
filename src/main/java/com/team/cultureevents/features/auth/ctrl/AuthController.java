@@ -12,6 +12,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -95,6 +96,12 @@ public class AuthController {
         if (!hasNickname && !hasResidence) {
             throw BusinessException.badRequest("수정할 닉네임 또는 거주지를 입력해주세요.");
         }
+        if (hasNickname) {
+            checkLength(request.nickname(), "닉네임은");
+        }
+        if (hasResidence) {
+            checkLength(request.residence(), "거주지는");
+        }
 
         member.updateNickname(request.nickname());
         member.updateResidence(request.residence());
@@ -104,6 +111,7 @@ public class AuthController {
     }
 
     @DeleteMapping("/me")
+    @Transactional
     public ResponseEntity<Void> deleteMe(HttpServletRequest request) {
         MemberEntity member = currentMember.requireMember(request);
 
@@ -132,6 +140,12 @@ public class AuthController {
                 .path(path)
                 .maxAge(age)
                 .build();
+    }
+
+    private static void checkLength(String value, String label) {
+        if (value.length() > 50) {
+            throw BusinessException.badRequest(label + " 50자 이하입니다.");
+        }
     }
 
     private String frontendUrl(String query) {
