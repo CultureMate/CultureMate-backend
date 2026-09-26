@@ -170,6 +170,9 @@ public class AuthController {
         if (set.size() > 10) {
             throw BusinessException.badRequest("관심 카테고리는 10개까지 선택할 수 있습니다.");
         }
+        if (String.join(",", set).length() > 200) {
+            throw BusinessException.badRequest("관심 카테고리는 200자 이내로 저장할 수 있습니다.");
+        }
         return List.copyOf(set);
     }
 

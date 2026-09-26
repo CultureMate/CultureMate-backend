@@ -164,6 +164,26 @@ class AuthControllerMeTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void updateRejectsInterestCategoriesWhenJoinedTextExceeds200() throws Exception {
+        when(currentMember.requireMember(any())).thenReturn(member());
+        StringBuilder body = new StringBuilder("{\"interestCategories\":[");
+        for (int i = 0; i < 10; i++) {
+            if (i > 0) {
+                body.append(',');
+            }
+            body.append('"').append(String.format("%02d", i)).append("가".repeat(18)).append('"');
+        }
+        body.append("]}");
+
+        mockMvc.perform(put("/api/auth/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body.toString()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_PARAM"));
+        verify(members, never()).save(any());
+    }
+
     private static MemberEntity member() throws Exception {
         MemberEntity member = new MemberEntity("kakao-1", "기존");
         member.updateResidence("마포구");
