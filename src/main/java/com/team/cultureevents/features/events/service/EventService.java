@@ -112,7 +112,7 @@ public class EventService {
         return new EventSummaryResponseDTO(
                 e.eventId(), e.title(), e.category(), e.district(),
                 e.place(), invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
-                emptyToBlank(e.imageUrl())
+                emptyToBlank(e.imageUrl()), e.latitude(), e.longitude()
         );
     }
 
@@ -125,7 +125,8 @@ public class EventService {
                 e.eventId(), e.title(), e.category(), e.district(), e.place(),
                 invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
                 emptyToBlank(e.fee()), emptyToBlank(e.organization()),
-                emptyToBlank(e.originalUrl()), emptyToBlank(e.imageUrl()), viewCount
+                emptyToBlank(e.originalUrl()), emptyToBlank(e.imageUrl()), viewCount,
+                e.latitude(), e.longitude()
         );
     }
 

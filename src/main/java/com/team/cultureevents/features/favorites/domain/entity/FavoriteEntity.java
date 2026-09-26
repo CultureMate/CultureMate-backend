@@ -12,13 +12,12 @@ import java.time.Instant;
 import java.time.LocalDate;
 
 /**
- * MVP: browser_key + event_id 유니크. member_id는 로그인 연동 이후.
+ * 로그인 회원(member_id) + event_id 유니크.
  */
 @Entity
 @Table(
         name = "favorite",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_favorite_browser_event", columnNames = {"browser_key", "event_id"}),
                 @UniqueConstraint(name = "uk_favorite_member_event", columnNames = {"member_id", "event_id"})
         }
 )
@@ -28,10 +27,7 @@ public class FavoriteEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long favoriteId;
 
-    @Column(name = "browser_key", length = 64)
-    private String browserKey;
-
-    @Column(name = "member_id")
+    @Column(name = "member_id", nullable = false)
     private Long memberId;
 
     @Column(name = "event_id", nullable = false, length = 512)
@@ -56,7 +52,7 @@ public class FavoriteEntity {
     }
 
     public FavoriteEntity(
-            String browserKey,
+            Long memberId,
             String eventId,
             String title,
             LocalDate startDate,
@@ -64,7 +60,7 @@ public class FavoriteEntity {
             String place,
             Instant savedAt
     ) {
-        this.browserKey = browserKey;
+        this.memberId = memberId;
         this.eventId = eventId;
         this.title = title;
         this.startDate = startDate;
@@ -75,10 +71,6 @@ public class FavoriteEntity {
 
     public Long getFavoriteId() {
         return favoriteId;
-    }
-
-    public String getBrowserKey() {
-        return browserKey;
     }
 
     public Long getMemberId() {

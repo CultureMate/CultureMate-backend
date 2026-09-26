@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 
 /**
  * 홈 FR-07용. FE가 기대하는 GET /api/main/hot-events · upcoming-events.
- * 거주지 필터는 아직 쿠키 연동 전이므로 서울 전체 기준으로 내려준다.
+ * 다가오는 행사는 자치구(거주지)가 주어지면 해당 구만, 없으면 서울 전체 기준이다.
  */
 @Service
 public class MainHomeService {
@@ -53,18 +53,24 @@ public class MainHomeService {
     }
 
     public HomeEventsResponseDTO upcomingEvents(Integer limit) {
+        return upcomingEvents(null, limit);
+    }
+
+    public HomeEventsResponseDTO upcomingEvents(String district, Integer limit) {
         int lim = normalizeLimit(limit);
         LocalDate today = LocalDate.now(SEOUL);
+        String target = district == null || district.isBlank() ? null : district.trim();
         Map<String, Integer> views = viewMap();
         List<HomeEventItemDTO> events = loadEvents().stream()
-                .filter(e -> notEnded(e, today))
+                .filter(e -> startsTodayOrLater(e, today))
+                .filter(e -> target == null || target.equals(e.district() == null ? "" : e.district().trim()))
                 .map(e -> toItem(e, views))
                 .sorted(Comparator
                         .comparing(HomeEventItemDTO::startDate, Comparator.nullsLast(String::compareTo))
                         .thenComparing(HomeEventItemDTO::title, Comparator.nullsLast(String::compareTo)))
                 .limit(lim)
                 .toList();
-        return new HomeEventsResponseDTO(events);
+        return new HomeEventsResponseDTO(events, target);
     }
 
     private Map<String, Integer> viewMap() {
@@ -103,13 +109,13 @@ public class MainHomeService {
         );
     }
 
-    private static boolean notEnded(SeoulEvent e, LocalDate today) {
-        LocalDate end = EventDates.parseFlexible(e.endDate());
-        if (end != null) {
-            return !end.isBefore(today);
+    /** '다가오는' 행사 = 오늘 이후 시작(이미 시작한 장기 행사는 제외). 기간이 뒤집힌 행은 제외. */
+    private static boolean startsTodayOrLater(SeoulEvent e, LocalDate today) {
+        if (EventDates.inverted(e.startDate(), e.endDate())) {
+            return false;
         }
         LocalDate start = EventDates.parseFlexible(e.startDate());
-        return start == null || !start.isBefore(today);
+        return start != null && !start.isBefore(today);
     }
 
     private static int normalizeLimit(Integer limit) {

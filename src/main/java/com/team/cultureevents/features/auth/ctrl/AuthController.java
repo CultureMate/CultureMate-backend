@@ -7,6 +7,7 @@ import com.team.cultureevents.features.auth.service.AuthService;
 import com.team.cultureevents.features.auth.service.CurrentMemberService;
 import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
+import com.team.cultureevents.features.favorites.repository.FavoriteRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -25,6 +26,8 @@ import org.springframework.web.util.WebUtils;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -37,14 +40,16 @@ public class AuthController {
     private final AppProperties properties;
     private final MemberRepository members;
     private final AuthSessionRepository sessions;
+    private final FavoriteRepository favorites;
 
     public AuthController(AuthService auth, CurrentMemberService currentMember, AppProperties properties,
-                           MemberRepository members, AuthSessionRepository sessions) {
+                           MemberRepository members, AuthSessionRepository sessions, FavoriteRepository favorites) {
         this.auth = auth;
         this.currentMember = currentMember;
         this.properties = properties;
         this.members = members;
         this.sessions = sessions;
+        this.favorites = favorites;
     }
 
     @GetMapping("/kakao/start")
@@ -83,8 +88,7 @@ public class AuthController {
 
     @GetMapping("/me")
     public MeResponse me(HttpServletRequest request) {
-        MemberEntity member = currentMember.requireMember(request);
-        return new MeResponse(member.getMemberId(), member.getNickname(), member.getResidence());
+        return toMe(currentMember.requireMember(request));
     }
 
     @PutMapping("/me")
@@ -93,8 +97,9 @@ public class AuthController {
 
         boolean hasNickname = request.nickname() != null && !request.nickname().isBlank();
         boolean hasResidence = request.residence() != null && !request.residence().isBlank();
-        if (!hasNickname && !hasResidence) {
-            throw BusinessException.badRequest("수정할 닉네임 또는 거주지를 입력해주세요.");
+        boolean hasInterests = request.interestCategories() != null;
+        if (!hasNickname && !hasResidence && !hasInterests) {
+            throw BusinessException.badRequest("수정할 닉네임, 거주지 또는 관심 카테고리를 입력해주세요.");
         }
         if (hasNickname) {
             checkLength(request.nickname(), "닉네임은");
@@ -103,11 +108,14 @@ public class AuthController {
             checkLength(request.residence(), "거주지는");
         }
 
+        List<String> interests = hasInterests ? normalizeInterests(request.interestCategories()) : null;
+
         member.updateNickname(request.nickname());
         member.updateResidence(request.residence());
+        member.updateInterestCategories(interests);
         members.save(member);
 
-        return new MeResponse(member.getMemberId(), member.getNickname(), member.getResidence());
+        return toMe(member);
     }
 
     @DeleteMapping("/me")
@@ -116,6 +124,7 @@ public class AuthController {
         MemberEntity member = currentMember.requireMember(request);
 
         sessions.deleteByMember_MemberId(member.getMemberId());
+        favorites.deleteByMemberId(member.getMemberId());
         members.delete(member);
 
         return ResponseEntity.noContent()
@@ -142,6 +151,28 @@ public class AuthController {
                 .build();
     }
 
+    private MeResponse toMe(MemberEntity member) {
+        return new MeResponse(member.getMemberId(), member.getNickname(), member.getResidence(),
+                member.getInterestCategories(), favorites.countByMemberId(member.getMemberId()));
+    }
+
+    /** 공백·중복 제거. 쉼표로 이어 저장하므로 쉼표는 허용하지 않는다. */
+    private static List<String> normalizeInterests(List<String> raw) {
+        LinkedHashSet<String> set = new LinkedHashSet<>();
+        for (String value : raw) {
+            if (value == null || value.isBlank()) continue;
+            String v = value.trim();
+            if (v.contains(",") || v.length() > 20) {
+                throw BusinessException.badRequest("관심 카테고리 값이 올바르지 않습니다.");
+            }
+            set.add(v);
+        }
+        if (set.size() > 10) {
+            throw BusinessException.badRequest("관심 카테고리는 10개까지 선택할 수 있습니다.");
+        }
+        return List.copyOf(set);
+    }
+
     private static void checkLength(String value, String label) {
         if (value.length() > 50) {
             throw BusinessException.badRequest(label + " 50자 이하입니다.");
@@ -156,7 +187,8 @@ public class AuthController {
         return origin.replaceAll("/+$", "") + "/?" + query;
     }
 
-    public record MeResponse(Long memberId, String nickname, String residence) {}
+    public record MeResponse(Long memberId, String nickname, String residence,
+                             List<String> interestCategories, long favoriteCount) {}
 
-    public record UpdateMeRequest(String nickname, String residence) {}
+    public record UpdateMeRequest(String nickname, String residence, List<String> interestCategories) {}
 }

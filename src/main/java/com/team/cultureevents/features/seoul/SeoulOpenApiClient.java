@@ -99,7 +99,7 @@ public class SeoulOpenApiClient {
             SeoulEvent normalized = new SeoulEvent(
                     id, event.title(), event.category(), event.district(), event.place(),
                     event.startDate(), event.endDate(), event.fee(), event.organization(),
-                    event.originalUrl(), event.imageUrl()
+                    event.originalUrl(), event.imageUrl(), event.latitude(), event.longitude()
             );
             // 완전히 같은 행은 한 번만 보여준다. 조합키도 충돌하면 다른 원본 필드까지
             // 포함한 결정적 키를 사용해 목록과 상세가 서로 다른 행을 가리키게 한다.
@@ -109,7 +109,7 @@ public class SeoulOpenApiClient {
                 SeoulEvent distinct = new SeoulEvent(
                         distinctId, event.title(), event.category(), event.district(), event.place(),
                         event.startDate(), event.endDate(), event.fee(), event.organization(),
-                        event.originalUrl(), event.imageUrl()
+                        event.originalUrl(), event.imageUrl(), event.latitude(), event.longitude()
                 );
                 SeoulEvent collision = unique.putIfAbsent(distinctId, distinct);
                 if (collision != null && !collision.equals(distinct)) {
@@ -148,6 +148,7 @@ public class SeoulOpenApiClient {
         String originalUrl = firstNonBlank(portal, text(row, "ORG_LINK"));
         // 기관 홈페이지는 여러 행사가 공유할 수 있어 식별키로 사용하지 않는다.
         String eventId = EventIdGenerator.from(portal, title, startDate, place);
+        Double[] coordinates = coordinates(text(row, "LAT"), text(row, "LOT"));
 
         return new SeoulEvent(
                 eventId,
@@ -160,8 +161,41 @@ public class SeoulOpenApiClient {
                 text(row, "USE_FEE"),
                 text(row, "ORG_NAME"),
                 originalUrl,
-                text(row, "MAIN_IMG")
+                text(row, "MAIN_IMG"),
+                coordinates[0],
+                coordinates[1]
         );
+    }
+
+    /**
+     * 서울시 API의 LAT·LOT를 위도·경도로 정리한다.
+     * 원본에서 두 값이 뒤바뀐 행이 있어, 서울 범위(위도 33~39, 경도 124~132)에 맞게 바로잡는다.
+     * 값이 없거나 범위를 벗어나면 null(프론트는 장소명 검색으로 대체).
+     */
+    static Double[] coordinates(String lat, String lot) {
+        Double a = parseDouble(lat);
+        Double b = parseDouble(lot);
+        if (a == null || b == null) return new Double[]{null, null};
+        if (isLatitude(a) && isLongitude(b)) return new Double[]{a, b};
+        if (isLatitude(b) && isLongitude(a)) return new Double[]{b, a};
+        return new Double[]{null, null};
+    }
+
+    private static boolean isLatitude(double v) {
+        return v >= 33 && v <= 39;
+    }
+
+    private static boolean isLongitude(double v) {
+        return v >= 124 && v <= 132;
+    }
+
+    private static Double parseDouble(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return Double.parseDouble(raw.trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     private static String text(JsonNode row, String field) {

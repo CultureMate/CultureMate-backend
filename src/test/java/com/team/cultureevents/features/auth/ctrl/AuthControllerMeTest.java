@@ -8,6 +8,7 @@ import com.team.cultureevents.features.auth.service.CurrentMemberService;
 import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.commons.handler.GlobalExceptionHandler;
+import com.team.cultureevents.features.favorites.repository.FavoriteRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -23,6 +24,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,12 +35,13 @@ class AuthControllerMeTest {
     private final CurrentMemberService currentMember = mock(CurrentMemberService.class);
     private final MemberRepository members = mock(MemberRepository.class);
     private final AuthSessionRepository sessions = mock(AuthSessionRepository.class);
+    private final FavoriteRepository favorites = mock(FavoriteRepository.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         AuthController controller = new AuthController(
-                mock(AuthService.class), currentMember, mock(AppProperties.class), members, sessions);
+                mock(AuthService.class), currentMember, mock(AppProperties.class), members, sessions, favorites);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -124,7 +127,41 @@ class AuthControllerMeTest {
                 .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
 
         verify(sessions).deleteByMember_MemberId(7L);
+        verify(favorites).deleteByMemberId(7L);
         verify(members).delete(member);
+    }
+
+    @Test
+    void meReturnsInterestsAndFavoriteCount() throws Exception {
+        MemberEntity member = member();
+        member.updateInterestCategories(java.util.List.of("전시", "공연"));
+        when(currentMember.requireMember(any())).thenReturn(member);
+        when(favorites.countByMemberId(7L)).thenReturn(2L);
+
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.interestCategories[0]").value("전시"))
+                .andExpect(jsonPath("$.interestCategories[1]").value("공연"))
+                .andExpect(jsonPath("$.favoriteCount").value(2));
+    }
+
+    @Test
+    void updateSavesInterestCategoriesWithoutDuplicates() throws Exception {
+        MemberEntity member = member();
+        when(currentMember.requireMember(any())).thenReturn(member);
+
+        mockMvc.perform(put("/api/auth/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"interestCategories\":[\"전시\",\" 전시 \",\"공연\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.interestCategories.length()").value(2))
+                .andExpect(jsonPath("$.nickname").value("기존"));
+        verify(members).save(member);
+
+        mockMvc.perform(put("/api/auth/me")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"interestCategories\":[\"전시,공연\"]}"))
+                .andExpect(status().isBadRequest());
     }
 
     private static MemberEntity member() throws Exception {

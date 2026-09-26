@@ -9,6 +9,8 @@ import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 
 @Entity
 @Table(name = "member", uniqueConstraints = @UniqueConstraint(name = "uk_member_kakao", columnNames = "kakao_id"))
@@ -25,6 +27,10 @@ public class MemberEntity {
 
     @Column(length = 50)
     private String residence;
+
+    /** 관심 카테고리. 쉼표로 이어 붙여 저장한다(예: "전시,공연"). */
+    @Column(name = "interest_categories", length = 200)
+    private String interestCategories;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
@@ -45,6 +51,10 @@ public class MemberEntity {
     public String getKakaoId() { return kakaoId; }
     public String getNickname() { return nickname; }
     public String getResidence() { return residence; }
+    public List<String> getInterestCategories() {
+        if (interestCategories == null || interestCategories.isBlank()) return List.of();
+        return Arrays.stream(interestCategories.split(",")).map(String::trim).filter(v -> !v.isBlank()).toList();
+    }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 
@@ -55,9 +65,17 @@ public class MemberEntity {
         }
     }
     public void updateResidence(String residence) {
-    if (residence != null && !residence.isBlank() && !residence.equals(this.residence)) {
-        this.residence = residence;
-        this.updatedAt = Instant.now();
+        if (residence != null && !residence.isBlank() && !residence.equals(this.residence)) {
+            this.residence = residence;
+            this.updatedAt = Instant.now();
+        }
     }
-}
+    public void updateInterestCategories(List<String> categories) {
+        if (categories == null) return;
+        String joined = String.join(",", categories);
+        if (!joined.equals(this.interestCategories == null ? "" : this.interestCategories)) {
+            this.interestCategories = joined;
+            this.updatedAt = Instant.now();
+        }
+    }
 }

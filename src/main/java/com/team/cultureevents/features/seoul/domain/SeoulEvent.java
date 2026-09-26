@@ -15,6 +15,15 @@ public record SeoulEvent(
         String fee,
         String organization,
         String originalUrl,
-        String imageUrl
+        String imageUrl,
+        Double latitude,
+        Double longitude
 ) {
+    /** 좌표가 없는 행사(테스트·Mock 등)용. */
+    public SeoulEvent(String eventId, String title, String category, String district, String place,
+                      String startDate, String endDate, String fee, String organization,
+                      String originalUrl, String imageUrl) {
+        this(eventId, title, category, district, place, startDate, endDate, fee, organization,
+                originalUrl, imageUrl, null, null);
+    }
 }
