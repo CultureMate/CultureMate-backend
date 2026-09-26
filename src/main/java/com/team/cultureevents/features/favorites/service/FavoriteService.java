@@ -17,7 +17,7 @@ import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 
-/** 브라우저 식별자(X-Client-Id) 기준 찜 CRUD. */
+/** 로그인 회원(memberId) 기준 관심행사 CRUD. */
 @Service
 @Transactional
 public class FavoriteService {
@@ -30,19 +30,18 @@ public class FavoriteService {
         this.eventService = eventService;
     }
 
-    public FavoriteResponseDTO save(String clientId, FavoriteRequestDTO request) {
-        String browserKey = requireClientId(clientId);
+    public FavoriteResponseDTO save(Long memberId, FavoriteRequestDTO request) {
         String eventId = request == null || request.eventId() == null ? "" : request.eventId().trim();
         if (eventId.isBlank()) {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
-        if (favoriteRepository.findByBrowserKeyAndEventId(browserKey, eventId).isPresent()) {
+        if (favoriteRepository.findByMemberIdAndEventId(memberId, eventId).isPresent()) {
             throw BusinessException.conflict("이미 저장된 행사입니다.");
         }
 
         EventDetailResponseDTO detail = eventService.getDetail(eventId);
         FavoriteEntity saved = favoriteRepository.save(new FavoriteEntity(
-                browserKey,
+                memberId,
                 detail.eventId(),
                 clip(blankToTitle(detail.title()), 300),
                 EventDates.parseFlexible(detail.startDate()),
@@ -54,9 +53,8 @@ public class FavoriteService {
     }
 
     @Transactional(readOnly = true)
-    public List<FavoriteResponseDTO> list(String clientId, String month) {
-        String browserKey = requireClientId(clientId);
-        List<FavoriteEntity> items = favoriteRepository.findByBrowserKeyOrderBySavedAtDesc(browserKey);
+    public List<FavoriteResponseDTO> list(Long memberId, String month) {
+        List<FavoriteEntity> items = favoriteRepository.findByMemberIdOrderBySavedAtDesc(memberId);
         if (month == null || month.isBlank()) {
             return items.stream().map(FavoriteResponseDTO::fromEntity).toList();
         }
@@ -71,26 +69,14 @@ public class FavoriteService {
                 .toList();
     }
 
-    public void delete(String clientId, String eventId) {
-        String browserKey = requireClientId(clientId);
+    public void delete(Long memberId, String eventId) {
         String id = eventId == null ? "" : eventId.trim();
         if (id.isBlank()) {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
-        FavoriteEntity existing = favoriteRepository.findByBrowserKeyAndEventId(browserKey, id)
+        FavoriteEntity existing = favoriteRepository.findByMemberIdAndEventId(memberId, id)
                 .orElseThrow(() -> BusinessException.notFound("저장된 행사가 없습니다."));
         favoriteRepository.delete(existing);
-    }
-
-    private static String requireClientId(String clientId) {
-        String key = clientId == null ? "" : clientId.trim();
-        if (key.isBlank()) {
-            throw BusinessException.badRequest("X-Client-Id 헤더가 필요합니다.");
-        }
-        if (key.length() > 64) {
-            throw BusinessException.badRequest("X-Client-Id는 64자 이하여야 합니다.");
-        }
-        return key;
     }
 
     private static YearMonth parseMonth(String month) {

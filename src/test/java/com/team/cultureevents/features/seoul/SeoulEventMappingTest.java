@@ -9,6 +9,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -19,6 +20,22 @@ class SeoulEventMappingTest {
     void rejectsInvalidDateInsteadOfReturningUnparseablePrefix() {
         assertEquals("", SeoulOpenApiClient.toDate("2026-99-99 12:00:00"));
         assertEquals("2026-10-10", SeoulOpenApiClient.toDate("2026-10-10 12:00:00"));
+    }
+
+    @Test
+    void coordinatesAreNormalizedToSeoulLatitudeLongitude() {
+        Double[] normal = SeoulOpenApiClient.coordinates("37.5665", "126.978");
+        assertEquals(37.5665, normal[0]);
+        assertEquals(126.978, normal[1]);
+
+        // 원본에서 LAT·LOT가 뒤바뀐 행
+        Double[] swapped = SeoulOpenApiClient.coordinates("126.978", "37.5665");
+        assertEquals(37.5665, swapped[0]);
+        assertEquals(126.978, swapped[1]);
+
+        assertNull(SeoulOpenApiClient.coordinates("", "126.978")[0]);
+        assertNull(SeoulOpenApiClient.coordinates("0", "0")[0]);
+        assertNull(SeoulOpenApiClient.coordinates("abc", "126.978")[1]);
     }
 
     @Test

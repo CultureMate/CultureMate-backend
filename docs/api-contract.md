@@ -8,7 +8,7 @@
 - `eventId`는 URL일 수 있음 → query에 `encodeURIComponent(eventId)` 한 번만
 - 오류: `{ "code": "...", "message": "..." }`
 - 세션 쿠키: `CULTUREMATE_SESSION` HttpOnly, 7일. 인증 fetch는 `credentials: 'include'`
-- 찜 사용자: 헤더 `X-Client-Id` (최대 64자). 로그인 회원과 아직 이관 없음
+- 관심 행사(찜)는 로그인 회원 기준. 세션 쿠키 없으면 `401`
 - 서울시 원본은 30분 캐시. 행사 테이블 없음
 
 | code | HTTP | 의미 |
@@ -17,7 +17,7 @@
 | `UNAUTHORIZED` | 401 | 세션 없음/만료 |
 | `FORBIDDEN` | 403 | 본인 댓글이 아님 |
 | `NOT_FOUND` | 404 | 행사 또는 찜 없음 |
-| `ALREADY_SAVED` | 409 | 같은 브라우저·같은 행사 중복 찜 |
+| `ALREADY_SAVED` | 409 | 같은 회원·같은 행사 중복 찜 |
 | `UPSTREAM_UNAVAILABLE` | 502 | 서울시 API 실패 |
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
 | `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
@@ -59,12 +59,15 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
     "place": "행사장",
     "startDate": "2026-09-20",
     "endDate": "2026-09-25",
-    "imageUrl": "https://..."
+    "imageUrl": "https://...",
+    "latitude": 37.55,
+    "longitude": 126.91
   }]
 }
 ```
 
 `count`는 이번 배열 길이, `totalCount`는 필터 전체. 페이지 없으면 `page`/`size`는 `null`.  
+`latitude`·`longitude`는 서울시 원본 `LAT`·`LOT`(뒤바뀐 행은 서울 범위로 바로잡음). 없거나 범위 밖이면 `null`.  
 원본 시작일 > 종료일이면 날짜 검색에서 제외하고, 필터 없는 목록·상세에서는 날짜를 빈 문자열로 줍니다. 화면은 「일정 확인 필요」.
 
 ### `GET /api/events/detail?eventId={encoded}`
@@ -80,7 +83,7 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 |--------|------|------|
 | GET | `/api/auth/kakao/start` | 302 → 카카오. 키 없으면 503 |
 | GET | `/api/auth/kakao/callback` | 성공 `/?login=success`, 취소 `/?login=cancelled` + 세션 쿠키 |
-| GET | `/api/auth/me` | `{ memberId, nickname, residence }` / 401 |
+| GET | `/api/auth/me` | 8번 마이페이지 참고 / 401 |
 | POST | `/api/auth/logout` | 204, 쿠키 삭제 |
 
 Redirect URI: `http://localhost:8080/api/auth/kakao/callback`
@@ -95,7 +98,8 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 
 ## 4. 관심 행사 · 완료
 
-헤더 `X-Client-Id` 필수. 없으면 400. 로그인 불필요. 저장 시 서버가 행사 스냅샷을 채움.
+세션 쿠키 필요(로그인 회원 ID 기준). 없으면 `401`. 저장 시 서버가 행사 스냅샷을 채움.  
+다른 회원의 저장분은 조회되지 않고, 삭제하면 `404`.
 
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
@@ -130,8 +134,9 @@ OpenAI 읽기 제한은 30초, 출력은 최대 300토큰입니다. 같은 행�
 | PUT | `/api/comments/{commentId}` body `{ "content" }` | `200` |
 | DELETE | `/api/comments/{commentId}` | `204` |
 
-응답 항목: `commentId`, `eventId`, `memberId`, `parentId`, `content`, `createdAt`, `updatedAt`.  
-본인 댓글이 아니면 `403 FORBIDDEN`. 세션 없으면 `401`.
+응답 항목: `commentId`, `eventId`, `memberId`, `nickname`, `parentId`, `content`, `createdAt`, `updatedAt`.  
+`nickname`이 `null`이면 탈퇴한 회원. 대댓글은 중첩하지 않고 같은 배열에 `parentId`로 연결.  
+본인 댓글이 아니면 `403 FORBIDDEN`. 세션 없으면 `401`. 상위 댓글을 삭제하면 대댓글도 함께 삭제.
 
 ## 7. 조회수 · 완료
 
@@ -151,21 +156,24 @@ OpenAI 읽기 제한은 30초, 출력은 최대 300토큰입니다. 같은 행�
 
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
-| GET | `/api/auth/me` | `{ memberId, nickname, residence }` |
-| PUT | `/api/auth/me` body `{ "nickname"?, "residence"? }` | `200` 수정된 정보 |
-| DELETE | `/api/auth/me` | `204`. 세션·회원 삭제, 쿠키 만료 |
+| GET | `/api/auth/me` | `{ memberId, nickname, residence, interestCategories, favoriteCount }` |
+| PUT | `/api/auth/me` body `{ "nickname"?, "residence"?, "interestCategories"? }` | `200` 수정된 정보(GET과 같은 형태) |
+| DELETE | `/api/auth/me` | `204`. 세션·관심 행사·회원 삭제, 쿠키 만료 |
 
-수정 시 값이 없거나 기존과 같으면 그 필드는 변경하지 않음. 둘 다 없으면 `400 INVALID_PARAM`. 닉네임·거주지는 50자 이하이고, 넘으면 `400 INVALID_PARAM`.
+수정 시 값이 없거나 기존과 같으면 그 필드는 변경하지 않음. 세 값이 모두 없으면 `400 INVALID_PARAM`. 닉네임·거주지는 50자 이하이고, 넘으면 `400 INVALID_PARAM`.  
+`interestCategories`는 문자열 배열(예: `["전시","공연"]`). 보내면 통째로 교체, 공백·중복은 제거, 최대 10개, 값에 쉼표 불가. 쉼표로 이은 전체는 200자 이내이고, 넘으면 `400 INVALID_PARAM`.  
+`residence`가 없으면 FE는 최초 로그인으로 보고 프로필 설정 화면으로 보냄.  
+탈퇴한 회원의 댓글은 남고 `nickname`이 `null`로 내려감.
 
 ## 9. 홈 HOT / 근처 · 완료
 
-로그인 불필요. `district` 쿼리는 보내지 않으며, 지금은 서울 전체 기준입니다.  
-거주지(쿠키) 반영은 후속. `limit` 기본 6, 범위 1~30.
+로그인 불필요. `limit` 기본 6, 범위 1~30.  
+upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거주지 → 둘 다 없으면 서울 전체.
 
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
 | GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순 |
-| GET | `/api/main/upcoming-events?limit=6` | `200` `{ "events": [...] }` 시작일 오름차순(종료되지 않은 행사) |
+| GET | `/api/main/upcoming-events?district=&limit=6` | `200` `{ "events": [...], "district": "마포구" 또는 null }` 오늘 이후 시작하는 행사, 시작일 오름차순 |
 
 각 항목: `eventId`, `title`, `category`, `district`, `place`, `startDate`, `endDate`, `imageUrl`, `viewCount`, `dDay`(한국 날짜 기준, 시작일 없으면 `null`).
 
@@ -178,7 +186,7 @@ Google Places.
 1. `GET /api/health`
 2. `GET /api/events?district=마포구&page=0&size=5`
 3. 첫 `eventId`로 `GET /api/events/detail?eventId=...`
-4. `X-Client-Id`로 찜 POST → GET → DELETE
+4. 로그인 후 찜 POST → GET → DELETE
 5. 카카오 설정 후 `start` → `/me` → logout
 6. 로그인 후 댓글 POST → GET → PUT → DELETE
 7. `POST /api/events/views?eventId=...` → 상세 `viewCount` 증가 확인

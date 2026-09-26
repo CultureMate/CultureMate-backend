@@ -8,4 +8,6 @@ import java.util.List;
 public interface CommentRepository extends JpaRepository<CommentEntity, Long> {
 
     List<CommentEntity> findByEventIdOrderByCreatedAtAsc(String eventId);
+
+    List<CommentEntity> findByParentId(Long parentId);
 }

@@ -25,7 +25,7 @@
 ## ⚙️ 동작 원칙
 
 - 행사 원본은 DB에 저장하지 않습니다. 서울시 API를 호출하고 30분 캐시합니다.
-- 찜은 로그인 없이 헤더 `X-Client-Id` 기준입니다. 회원 이관은 아직 없습니다.
+- 찜(관심 행사)은 로그인 회원 기준입니다. 세션 쿠키가 없으면 `401`입니다.
 - 카카오 로그인은 `CULTUREMATE_SESSION` HttpOnly 쿠키(7일)입니다. `/me`·로그아웃은 `credentials: include`가 필요합니다.
 - API 키는 `.env`의 `SEOUL_API_KEY`, `KAKAO_REST_KEY`만 읽습니다.
 

@@ -8,9 +8,11 @@ import java.util.Optional;
 
 public interface FavoriteRepository extends JpaRepository<FavoriteEntity, Long> {
 
-    List<FavoriteEntity> findByBrowserKeyOrderBySavedAtDesc(String browserKey);
+    List<FavoriteEntity> findByMemberIdOrderBySavedAtDesc(Long memberId);
 
-    Optional<FavoriteEntity> findByBrowserKeyAndEventId(String browserKey, String eventId);
+    Optional<FavoriteEntity> findByMemberIdAndEventId(Long memberId, String eventId);
 
-    void deleteByBrowserKeyAndEventId(String browserKey, String eventId);
+    long countByMemberId(Long memberId);
+
+    void deleteByMemberId(Long memberId);
 }

@@ -8,6 +8,8 @@ public record EventSummaryResponseDTO(
         String place,
         String startDate,
         String endDate,
-        String imageUrl
+        String imageUrl,
+        Double latitude,
+        Double longitude
 ) {
 }

@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.WebUtils;
 
 import java.time.Instant;
+import java.util.Optional;
 
 @Service
 public class CurrentMemberService {
@@ -33,6 +34,18 @@ public class CurrentMemberService {
             throw unauthorized();
         }
         return session.getMember();
+    }
+
+    /** 비로그인도 허용하는 API용. 세션이 없거나 만료면 empty. */
+    @Transactional(readOnly = true)
+    public Optional<MemberEntity> findMember(HttpServletRequest request) {
+        var cookie = WebUtils.getCookie(request, SESSION_COOKIE);
+        if (cookie == null || cookie.getValue().isBlank()) {
+            return Optional.empty();
+        }
+        return sessions.findById(cookie.getValue())
+                .filter(session -> session.getExpiresAt().isAfter(Instant.now()))
+                .map(AuthSessionEntity::getMember);
     }
 
     private static BusinessException unauthorized() {
