@@ -9,6 +9,8 @@ import com.team.cultureevents.features.events.domain.dto.EventSummaryResponseDTO
 import com.team.cultureevents.features.seoul.SeoulEventCache;
 import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
+import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
+import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
 import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.springframework.stereotype.Service;
 
@@ -27,11 +29,14 @@ public class EventService {
     private final SeoulOpenApiClient client;
     private final SeoulEventCache cache;
     private final EventViewRepository eventViewRepository;
+    private final AiSummaryRepository aiSummaryRepository;
 
-    public EventService(SeoulOpenApiClient client, SeoulEventCache cache, EventViewRepository eventViewRepository) {
+    public EventService(SeoulOpenApiClient client, SeoulEventCache cache, EventViewRepository eventViewRepository,
+                         AiSummaryRepository aiSummaryRepository) {
         this.client = client;
         this.cache = cache;
         this.eventViewRepository = eventViewRepository;
+        this.aiSummaryRepository = aiSummaryRepository;
     }
 
     public EventListResponseDTO list(List<String> districts, List<String> categories, List<String> dates) {
@@ -121,12 +126,15 @@ public class EventService {
         int viewCount = eventViewRepository.findById(e.eventId())
                 .map(v -> v.getViewCount())
                 .orElse(0);
+        String summary = aiSummaryRepository.findById(e.eventId())
+                .map(AiSummaryEntity::getSummary)
+                .orElse(null);
         return new EventDetailResponseDTO(
                 e.eventId(), e.title(), e.category(), e.district(), e.place(),
                 invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
                 emptyToBlank(e.fee()), emptyToBlank(e.organization()),
                 emptyToBlank(e.originalUrl()), emptyToBlank(e.imageUrl()), viewCount,
-                e.latitude(), e.longitude()
+                e.latitude(), e.longitude(), summary
         );
     }
 

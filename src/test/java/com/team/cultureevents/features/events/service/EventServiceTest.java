@@ -4,10 +4,14 @@ import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.seoul.SeoulEventCache;
 import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
+import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
+import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
 import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -20,7 +24,8 @@ class EventServiceTest {
     private final SeoulOpenApiClient client = mock(SeoulOpenApiClient.class);
     private final SeoulEventCache cache = mock(SeoulEventCache.class);
     private final EventViewRepository eventViewRepository = mock(EventViewRepository.class);
-    private final EventService service = new EventService(client, cache, eventViewRepository);
+    private final AiSummaryRepository aiSummaryRepository = mock(AiSummaryRepository.class);
+    private final EventService service = new EventService(client, cache, eventViewRepository, aiSummaryRepository);
 
     @Test
     void blankSourceCategoryDoesNotMatchSelectedCategory() {
@@ -84,6 +89,23 @@ class EventServiceTest {
         assertEquals("", detail.startDate());
         assertEquals("", detail.endDate());
         assertEquals("", service.list(List.of(), List.of(), List.of()).events().get(0).startDate());
+    }
+
+    @Test
+    void detailIncludesSavedSummaryWhenPresent() {
+        when(cache.getIfFresh()).thenReturn(List.of(event("id-1", "전시")));
+        when(aiSummaryRepository.findById("id-1"))
+                .thenReturn(Optional.of(new AiSummaryEntity("id-1", "저장된 소개", Instant.parse("2026-09-01T00:00:00Z"))));
+
+        assertEquals("저장된 소개", service.getDetail("id-1").summary());
+    }
+
+    @Test
+    void detailSummaryIsNullWhenNotGeneratedYet() {
+        when(cache.getIfFresh()).thenReturn(List.of(event("id-1", "전시")));
+        when(aiSummaryRepository.findById("id-1")).thenReturn(Optional.empty());
+
+        assertEquals(null, service.getDetail("id-1").summary());
     }
 
     private static SeoulEvent event(String id, String category) {
