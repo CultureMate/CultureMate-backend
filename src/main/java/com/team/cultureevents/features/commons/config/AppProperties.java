@@ -8,6 +8,7 @@ public record AppProperties(
         SeoulApi seoulApi,
         Openai openai,
         Kakao kakao,
+        Places places,
         String frontendUrl
 ) {
     public record Cors(String allowedOrigin) {}
@@ -22,4 +23,6 @@ public record AppProperties(
     public record Openai(String key, String model) {}
 
     public record Kakao(String restKey, String clientSecret, String redirectUri) {}
+
+    public record Places(String key) {}
 }
