@@ -21,6 +21,8 @@
 | `UPSTREAM_UNAVAILABLE` | 502 | 서울시 API 실패 |
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
 | `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
+| `PLACES_UNAVAILABLE` | 503 | Google Places 조회 실패(키 미설정 포함) |
+| `PLACES_QUOTA_EXCEEDED` | 503 | 하루 Google Places 호출 한도(30건) 초과 |
 
 ## 1. 헬스 · 완료
 
@@ -73,7 +75,7 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 ### `GET /api/events/detail?eventId={encoded}`
 
 목록 필드 + `fee`, `organization`, `originalUrl`, `viewCount`(없으면 `0`), `summary`(아직 생성 전이면 `null`).  
-`summary`는 `POST /api/events/summary`로 이미 생성된 소개문이 있을 때만 채워지며, 이 API 자체는 새로 생성하지 않음.
+`summary`는 `POST /api/events/summary`로 이미 생성된 소개문이 있을 때만 채워지며, 이 API 자체는 새로 생성하지 않습니다.  
 슬래시 없는 ID만 `GET /api/events/{eventId}` 가능. URL형 ID는 반드시 query.
 
 ## 3. 카카오 로그인 · 서버 완료
@@ -178,9 +180,55 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 각 항목: `eventId`, `title`, `category`, `district`, `place`, `startDate`, `endDate`, `imageUrl`, `viewCount`, `dDay`(한국 날짜 기준, 시작일 없으면 `null`).
 
-## 10. 아직 없음
+## 10. 장소 추천(Google Places) · 설계
 
-Google Places.
+행사 좌표 근처의 식당·카페 후보를 추천합니다. "코스"는 프론트가 로컬에서 관리하므로,
+서버는 결과를 저장하지 않고 매 호출마다 Google Places에서 조회만 합니다.
+"다시 추천"은 새로 호출하지 않고, 한 번에 받은 리스트 안에서 프론트가 순서대로 보여주는 방식을 전제로 합니다.
+
+평점·리뷰수를 조합한 점수(베이지안 가중평균, IMDB 랭킹 방식과 동일)로 정렬합니다.
+평점이 없거나 리뷰 5개 미만인 장소는 제외합니다. 리뷰가 적으면 후보군 평균 평점 쪽으로,
+리뷰가 많으면 자기 평점 그대로 인정되도록 보정한 뒤 상위 `maxResults`개만 돌려줍니다.
+
+**중요**: Google Places Nearby Search(New)는 페이지네이션이 없어 한 번에 최대 20개까지만
+받을 수 있습니다. 같은 좌표·조건으로 다시 호출해도 "다음 20개"가 오지 않고 사실상 같은
+결과가 다시 옵니다. 프론트에서 더 많은 후보가 필요하면 `radius`를 넓혀서 재호출해야 하며,
+"최대 20곳까지만 추천"이라는 점을 UI에 안내해야 합니다.
+
+### `GET /api/places/nearby`
+
+| 파라미터 | 필수 | 의미 |
+|----------|------|------|
+| `latitude` | O | 중심 좌표 위도 |
+| `longitude` | O | 중심 좌표 경도 |
+| `types` | X | 콤마로 구분된 Google Place 타입. 기본값 `restaurant,cafe` |
+| `radius` | X | 검색 반경(m). 기본 500 |
+| `maxResults` | X | 최대 후보 수. 기본 5, 최대 20(Places 자체 상한, 페이지네이션 없음) |
+
+```
+GET /api/places/nearby?latitude=37.5125&longitude=127.0269&types=restaurant,cafe&radius=500&maxResults=5
+```
+
+```json
+[
+  {
+    "placeId": "ChIJ...",
+    "name": "스페이스 카페",
+    "address": "서울 강남구 ...",
+    "rating": 4.3,
+    "userRatingCount": 128,
+    "latitude": 37.5127,
+    "longitude": 127.0271,
+    "mapUrl": "https://maps.google.com/?cid=..."
+  }
+]
+```
+
+근처에 후보가 없거나, 있어도 전부 평점·리뷰 기준(리뷰 5개 이상)을 못 채우면 빈 배열 `[]`(에러 아님). Google Places 호출 자체가 실패하면 `503`.
+
+## 11. 아직 없음
+
+마이페이지 수정·탈퇴, 상세 보완(댓글 외), 코스 저장(FR-14).
 
 ## 로컬 확인
 
