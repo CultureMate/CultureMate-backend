@@ -72,7 +72,8 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 
 ### `GET /api/events/detail?eventId={encoded}`
 
-목록 필드 + `fee`, `organization`, `originalUrl`, `viewCount`(없으면 `0`).  
+목록 필드 + `fee`, `organization`, `originalUrl`, `viewCount`(없으면 `0`), `summary`(아직 생성 전이면 `null`).  
+`summary`는 `POST /api/events/summary`로 이미 생성된 소개문이 있을 때만 채워지며, 이 API 자체는 새로 생성하지 않음.
 슬래시 없는 ID만 `GET /api/events/{eventId}` 가능. URL형 ID는 반드시 query.
 
 ## 3. 카카오 로그인 · 서버 완료

@@ -14,13 +14,23 @@ public record EventDetailResponseDTO(
         String imageUrl,
         Integer viewCount,
         Double latitude,
-        Double longitude
+        Double longitude,
+        String summary
 ) {
     /** 좌표 없이 생성하는 경우(테스트 등). */
     public EventDetailResponseDTO(String eventId, String title, String category, String district, String place,
                                   String startDate, String endDate, String fee, String organization,
                                   String originalUrl, String imageUrl, Integer viewCount) {
         this(eventId, title, category, district, place, startDate, endDate, fee, organization,
-                originalUrl, imageUrl, viewCount, null, null);
+                originalUrl, imageUrl, viewCount, null, null, null);
+    }
+
+    /** 소개문 없이 좌표까지만 생성하는 경우(테스트 등). */
+    public EventDetailResponseDTO(String eventId, String title, String category, String district, String place,
+                                  String startDate, String endDate, String fee, String organization,
+                                  String originalUrl, String imageUrl, Integer viewCount,
+                                  Double latitude, Double longitude) {
+        this(eventId, title, category, district, place, startDate, endDate, fee, organization,
+                originalUrl, imageUrl, viewCount, latitude, longitude, null);
     }
 }
