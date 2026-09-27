@@ -10,6 +10,7 @@
 - 세션 쿠키: `CULTUREMATE_SESSION` HttpOnly, 7일. 인증 fetch는 `credentials: 'include'`
 - 관심 행사(찜)는 로그인 회원 기준. 세션 쿠키 없으면 `401`
 - 서울시 원본은 30분 캐시. 행사 테이블 없음
+- 원본 정리 규칙: 같은 행사가 여러 번 등록된 경우(제목·장소의 공백 제거 + 시작일이 같음) 등록일(`RGSTDATE`)이 최신인 행만 사용
 
 | code | HTTP | 의미 |
 |------|------|------|
@@ -67,7 +68,7 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 ```
 
 `count`는 이번 배열 길이, `totalCount`는 필터 전체. 페이지 없으면 `page`/`size`는 `null`.  
-`latitude`·`longitude`는 서울시 원본 `LAT`·`LOT`(뒤바뀐 행은 서울 범위로 바로잡음). 없거나 범위 밖이면 `null`.  
+`latitude`·`longitude`는 서울시 원본 `LAT`·`LOT`. 값 앞쪽 숫자만 읽고(예: `37.57~2` → `37.57`), 뒤바뀐 행은 서울 범위로 바로잡음. 없거나 서울 범위 밖이면 `null`(온라인 행사 등). FE는 좌표가 없으면 장소명 검색 또는 위치 정보 없음으로 처리.  
 원본 시작일 > 종료일이면 날짜 검색에서 제외하고, 필터 없는 목록·상세에서는 날짜를 빈 문자열로 줍니다. 화면은 「일정 확인 필요」.
 
 ### `GET /api/events/detail?eventId={encoded}`

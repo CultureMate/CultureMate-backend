@@ -18,6 +18,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * OA-15486 culturalEventInfo 호출.
@@ -27,6 +29,8 @@ import java.util.Map;
 public class SeoulOpenApiClient {
 
     private static final DateTimeFormatter ISO_DATE = DateTimeFormatter.ISO_LOCAL_DATE;
+    /** 좌표 문자열 앞쪽의 숫자만 읽는다. 예: "37.57~2" → 37.57, "45.42°N" → 45.42 */
+    private static final Pattern LEADING_NUMBER = Pattern.compile("^\\s*(-?\\d+(?:\\.\\d+)?)");
 
     private final AppProperties props;
     private final RestClient restClient;
@@ -46,7 +50,9 @@ public class SeoulOpenApiClient {
 
         // 서울 열린데이터광장은 요청 한 번에 최대 1,000행을 허용한다.
         int pageSize = Math.max(1, Math.min(1000, props.seoulApi().pageSize()));
-        List<SeoulEvent> all = new ArrayList<>();
+        // 같은 행사가 문화포털에 여러 번 등록된 경우 하나만 남긴다(중복 키 → 남길 원본 행).
+        Map<String, JsonNode> uniqueRows = new LinkedHashMap<>();
+        int fetched = 0;
         int start = 1;
 
         while (true) {
@@ -73,17 +79,34 @@ public class SeoulOpenApiClient {
             }
 
             for (JsonNode row : rows) {
-                all.add(mapRow(row));
+                uniqueRows.merge(duplicateKey(row), row, SeoulOpenApiClient::newerRow);
             }
+            fetched += rows.size();
 
-            int total = info.path("list_total_count").asInt(all.size());
+            int total = info.path("list_total_count").asInt(fetched);
             if (end >= total || rows.size() < pageSize) {
                 break;
             }
             start = end + 1;
         }
 
+        List<SeoulEvent> all = new ArrayList<>();
+        for (JsonNode row : uniqueRows.values()) {
+            all.add(mapRow(row));
+        }
         return resolveDuplicateIds(all);
+    }
+
+    /** 중복 등록 판단 키: 제목(공백 제거)|시작일|장소(공백 제거) */
+    static String duplicateKey(JsonNode row) {
+        return text(row, "TITLE").replaceAll("\\s+", "")
+                + "|" + toDate(text(row, "STRTDATE"))
+                + "|" + text(row, "PLACE").replaceAll("\\s+", "");
+    }
+
+    /** 둘 중 등록일(RGSTDATE)이 더 늦은 행을 남긴다. 같으면 먼저 온 행을 유지한다. */
+    static JsonNode newerRow(JsonNode kept, JsonNode candidate) {
+        return text(candidate, "RGSTDATE").compareTo(text(kept, "RGSTDATE")) > 0 ? candidate : kept;
     }
 
     /** 동일한 문화포털 URL이 여러 행사에 붙은 경우 명세의 조합키로 식별한다. */
@@ -190,9 +213,11 @@ public class SeoulOpenApiClient {
     }
 
     private static Double parseDouble(String raw) {
-        if (raw == null || raw.isBlank()) return null;
+        if (raw == null) return null;
+        Matcher matcher = LEADING_NUMBER.matcher(raw);
+        if (!matcher.find()) return null;
         try {
-            return Double.parseDouble(raw.trim());
+            return Double.parseDouble(matcher.group(1));
         } catch (NumberFormatException ignored) {
             return null;
         }
