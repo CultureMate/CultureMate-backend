@@ -54,7 +54,8 @@ public class PlacesService {
 
     /** 좌표 하나를 직접 주고 검색하는 범용 방식(행사 상세 페이지 보강 등에 사용). */
     public List<PlaceCandidateDTO> recommendNearby(Double latitude, Double longitude,
-                                                    List<String> types, Integer radiusMeters, Integer maxResults) {
+                                                    List<String> types, Integer radiusMeters, Integer maxResults,
+                                                    long memberId) {
         if (latitude == null || longitude == null) {
             throw BusinessException.badRequest("latitude, longitude가 필요합니다.");
         }
@@ -68,7 +69,7 @@ public class PlacesService {
                 : Math.min(Math.max(maxResults, 1), RESULT_LIMIT);
 
         List<PlaceCandidateDTO> pool = placesClient.searchNearby(
-                latitude, longitude, resolvedTypes, resolvedRadius, SEARCH_POOL_SIZE);
+                latitude, longitude, resolvedTypes, resolvedRadius, SEARCH_POOL_SIZE, memberId);
 
         return filterAndSort(pool).stream().limit(resolvedMax).toList();
     }
@@ -81,7 +82,8 @@ public class PlacesService {
      *
      * @param type "cafe" 또는 "restaurant" (한 번에 하나의 카테고리만)
      */
-    public List<PlaceCandidateDTO> recommendBetweenEvents(String eventId1, String eventId2, String type) {
+    public List<PlaceCandidateDTO> recommendBetweenEvents(String eventId1, String eventId2, String type,
+                                                           long memberId) {
         if (eventId1 == null || eventId1.isBlank() || eventId2 == null || eventId2.isBlank()) {
             throw BusinessException.badRequest("eventId1, eventId2가 필요합니다.");
         }
@@ -107,7 +109,7 @@ public class PlacesService {
                 Math.min(Math.max(distanceMeters / 2, MIN_BETWEEN_RADIUS_METERS), MAX_BETWEEN_RADIUS_METERS));
 
         List<PlaceCandidateDTO> pool = placesClient.searchNearby(
-                centerLat, centerLng, List.of(type), radius, RESULT_LIMIT);
+                centerLat, centerLng, List.of(type), radius, RESULT_LIMIT, memberId);
 
         // Geographic estimates, not walking/driving route lengths.
         double allowedDetour = Math.min(MAX_ALLOWED_DETOUR_METERS,
@@ -134,10 +136,10 @@ public class PlacesService {
     }
 
     /** 특정 사진 참조값을, 실제 화면에 띄울 수 있는 이미지 URL로 바꿔서 돌려준다. */
-    public String resolvePhotoUri(String photoName, Integer maxWidthPx) {
+    public String resolvePhotoUri(String photoName, Integer maxWidthPx, long memberId) {
         PlacesRequestValidator.photo(photoName);
         int resolvedWidth = maxWidthPx == null ? 400 : Math.min(Math.max(maxWidthPx, 1), 1600);
-        return placesClient.resolvePhotoUri(photoName, resolvedWidth);
+        return placesClient.resolvePhotoUri(photoName, resolvedWidth, memberId);
     }
 
     /** 평점·리뷰수 없는 곳과 폐업/휴업 상태를 걸러내고, 베이지안 점수 내림차순으로 정렬한다. */

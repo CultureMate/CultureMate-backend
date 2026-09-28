@@ -23,7 +23,8 @@
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
 | `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
 | `PLACES_UNAVAILABLE` | 503 | Google Places 조회 실패(키 미설정 포함) |
-| `PLACES_RATE_LIMITED` | 429 | 같은 IP의 Places 1분 호출 한도 초과(기본 검색 20회·사진 40회). 약 1분 뒤 재시도 |
+| `PLACES_RATE_LIMITED` | 429 | 같은 회원의 Places 1분 호출 한도 초과(기본 검색 20회·사진 40회). 약 1분 뒤 재시도 |
+| `PLACES_MEMBER_DAILY_LIMITED` | 429 | 같은 회원의 Places 일일 호출 한도 초과(기본 검색·사진 각 20회) |
 | `PLACES_QUOTA_EXCEEDED` | 503 | 서버 전체 Places 일일(검색 80·사진 60) 또는 월간(검색·사진 각 900) 한도 초과 |
 | `PLACES_QUOTA_BUSY` | 503 | 호출량 기록 충돌이 반복되어 처리하지 못함. 잠시 후 재시도 |
 
@@ -199,6 +200,8 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 ### 공통 규칙
 
+세 API 모두 로그인 세션 쿠키가 필요하며, 없거나 만료되면 `401 UNAUTHORIZED`입니다.
+
 **요청값 검증**: 아래 조건에 어긋나면 Google 호출과 호출량 차감 없이 `400 INVALID_PARAM`입니다.
 필수 파라미터를 빼거나 숫자 자리에 글자를 넣은 경우도 `400 INVALID_PARAM`입니다.
 
@@ -214,20 +217,22 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 | 구분 | 검색(`nearby` + `between` 합산) | 사진(`photo`) | 초과 시 |
 |------|------:|------:|------|
-| 같은 IP, 1분 | 20회 | 40회 | `429 PLACES_RATE_LIMITED` |
+| 같은 회원, 1분 | 20회 | 40회 | `429 PLACES_RATE_LIMITED` |
+| 같은 회원, 하루 | 20회 | 20회 | `429 PLACES_MEMBER_DAILY_LIMITED` |
 | 서버 전체, 하루 | 80회 | 60회 | `503 PLACES_QUOTA_EXCEEDED` |
 | 서버 전체, 한 달 | 900회 | 900회 | `503 PLACES_QUOTA_EXCEEDED` |
 
 - 실제로 Google에 요청이 나가는 호출만 셉니다. 검증에 실패한 요청은 세지 않고, 한도에 걸린 요청은
   어떤 카운트도 차감하지 않습니다.
-- IP는 접속 IP 기준이며 `X-Forwarded-For` 헤더는 믿지 않습니다. 같은 공용 IP(학원·카페 와이파이 등)를
-  쓰는 사용자들은 한도를 함께 씁니다. 1분 제한은 정각 분 단위 고정 구간입니다.
+- 제한 기준은 로그인 회원 ID입니다. Docker/Nginx 뒤에서도 회원마다 별도로 집계되며, 1분 제한은 정각 분
+  단위 고정 구간입니다.
 - 하루·한 달 경계는 미국 태평양 시간 기준입니다(구글 무료 사용량 갱신 시점). 한국 시간으로는 하루가
   오후 4~5시경(서머타임 여부에 따라)에 바뀝니다.
-- `429`는 약 1분 뒤에, `503 PLACES_QUOTA_EXCEEDED`는 다음 날(또는 다음 달)에야 풀립니다. 화면에는
-  "잠시 후 다시 시도해 주세요" 정도로 안내하세요.
-- 월간·분당 값은 환경변수(`PLACES_SEARCH_MONTHLY_LIMIT`, `PLACES_PHOTO_MONTHLY_LIMIT`,
-  `PLACES_SEARCH_PER_MINUTE`, `PLACES_PHOTO_PER_MINUTE`)로 바꿀 수 있고, 하루 한도(80·60)는 코드 상수입니다.
+- `PLACES_RATE_LIMITED`는 약 1분 뒤에, `PLACES_MEMBER_DAILY_LIMITED`는 다음 날에 풀립니다.
+  `503 PLACES_QUOTA_EXCEEDED`는 서버 전체 기준이라 다음 날 또는 다음 달에 풀립니다.
+- 월간·분당·회원별 일일 값은 환경변수(`PLACES_SEARCH_MONTHLY_LIMIT`, `PLACES_PHOTO_MONTHLY_LIMIT`,
+  `PLACES_SEARCH_PER_MINUTE`, `PLACES_PHOTO_PER_MINUTE`, `PLACES_SEARCH_PER_MEMBER_DAILY`,
+  `PLACES_PHOTO_PER_MEMBER_DAILY`)로 바꿀 수 있고, 서버 전체 하루 한도(80·60)는 코드 상수입니다.
 - 코스 하나(행사 N개)를 채우면 검색 호출이 `(N-1) * 2`번 나갑니다(구간마다 카페·음식점 각 1회).
 
 **Google Places 언어/지역 설정**
@@ -250,6 +255,8 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 | `detourMeters`, `recommendationScore` | `between`에서만 채워짐(우회 거리 m, 최종 추천 점수). `nearby`는 `null` |
 
 사진 옆에는 `authorAttributions` 배열의 **모든 저작자**를 표시해야 합니다(구글 약관상 필수).
+Google Places 결과는 목록으로 표시하고 `mapUrl`로 Google Maps를 여는 방식으로 사용합니다. 카카오맵에는
+Google Places의 장소·좌표를 마커로 표시하지 않습니다.
 
 ### `GET /api/places/nearby`
 
@@ -353,7 +360,7 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 
 응답은 이미지 자체가 아니라 **302 리다이렉트**(구글 CDN 링크로)입니다. 프론트에서 그냥
 `<img src="/api/places/photo?name=...">`로 쓰면 되고, API 키는 서버 밖으로 나가지 않습니다.
-같은 이미지를 다시 그릴 때마다 호출이 나가면 사진 한도와 IP 제한을 빨리 쓰니, 한 번 받은 이미지는
+같은 이미지를 다시 그릴 때마다 호출이 나가면 사진 한도와 회원별 제한을 빨리 쓰니, 한 번 받은 이미지는
 프론트에서 재사용하세요.
 
 **프론트 구현 주의 — 사진은 lazy loading 하세요.**

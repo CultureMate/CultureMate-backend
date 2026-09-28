@@ -11,9 +11,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
-
 import java.time.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -31,6 +28,8 @@ public class PlacesQuotaService {
     private final int photoMonthly;
     private final int searchPerMinute;
     private final int photoPerMinute;
+    private final int searchPerMemberDaily;
+    private final int photoPerMemberDaily;
     private final Clock clock;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -39,15 +38,20 @@ public class PlacesQuotaService {
             @Value("${app.places.search-monthly-limit:900}") int searchMonthly,
             @Value("${app.places.photo-monthly-limit:900}") int photoMonthly,
             @Value("${app.places.search-per-minute:20}") int searchPerMinute,
-            @Value("${app.places.photo-per-minute:40}") int photoPerMinute) {
+            @Value("${app.places.photo-per-minute:40}") int photoPerMinute,
+            @Value("${app.places.search-per-member-daily:20}") int searchPerMemberDaily,
+            @Value("${app.places.photo-per-member-daily:20}") int photoPerMemberDaily) {
         this(daily, buckets, manager, searchMonthly, photoMonthly, searchPerMinute, photoPerMinute,
+                searchPerMemberDaily, photoPerMemberDaily,
                 Clock.system(ZoneId.of("America/Los_Angeles")));
     }
 
     PlacesQuotaService(PlacesApiUsageRepository daily, PlacesQuotaBucketRepository buckets,
             PlatformTransactionManager manager, int searchMonthly, int photoMonthly,
-            int searchPerMinute, int photoPerMinute, Clock clock) {
-        if (searchMonthly < 0 || photoMonthly < 0 || searchPerMinute < 0 || photoPerMinute < 0) {
+            int searchPerMinute, int photoPerMinute,
+            int searchPerMemberDaily, int photoPerMemberDaily, Clock clock) {
+        if (searchMonthly < 0 || photoMonthly < 0 || searchPerMinute < 0 || photoPerMinute < 0
+                || searchPerMemberDaily < 0 || photoPerMemberDaily < 0) {
             throw new IllegalArgumentException("Places 호출 제한은 0 이상이어야 합니다.");
         }
         this.daily = daily;
@@ -56,19 +60,18 @@ public class PlacesQuotaService {
         this.photoMonthly = photoMonthly;
         this.searchPerMinute = searchPerMinute;
         this.photoPerMinute = photoPerMinute;
+        this.searchPerMemberDaily = searchPerMemberDaily;
+        this.photoPerMemberDaily = photoPerMemberDaily;
         this.clock = clock;
         transaction = new TransactionTemplate(manager);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
-    public void reserve(boolean photo) {
-        var attrs = RequestContextHolder.getRequestAttributes();
-        String ip = attrs instanceof ServletRequestAttributes servlet
-                ? servlet.getRequest().getRemoteAddr() : "internal";
-        reserve(photo, ip);
+    public void reserve(boolean photo, long memberId) {
+        reserve(photo, Long.toString(memberId));
     }
 
-    public void reserve(boolean photo, String identity) {
+    void reserve(boolean photo, String identity) {
         // Every retry starts a fresh transaction. Commit completes before the external API call.
         for (int attempt = 0; attempt < 30; attempt++) {
             try {
@@ -85,10 +88,18 @@ public class PlacesQuotaService {
         LocalDate today = LocalDate.now(clock);
         long minute = clock.instant().getEpochSecond() / 60;
         String kind = photo ? "photo" : "search";
-        String key = kind + ":ip:" + hash(identity);
-        PlacesQuotaBucket rate = buckets.findById(key).orElseGet(() -> new PlacesQuotaBucket(key));
+        String memberHash = hash(identity);
+        String rateKey = kind + ":member-minute:" + memberHash;
+        PlacesQuotaBucket rate = buckets.findById(rateKey).orElseGet(() -> new PlacesQuotaBucket(rateKey));
         if (rate.count(minute) >= (photo ? photoPerMinute : searchPerMinute)) {
-            throw new BusinessException("PLACES_RATE_LIMITED", "IP별 1분 호출 한도를 초과했습니다.", HttpStatus.TOO_MANY_REQUESTS);
+            throw new BusinessException("PLACES_RATE_LIMITED", "회원별 1분 호출 한도를 초과했습니다.", HttpStatus.TOO_MANY_REQUESTS);
+        }
+        String memberDayKey = kind + ":member-day:" + memberHash;
+        PlacesQuotaBucket memberDay = buckets.findById(memberDayKey)
+                .orElseGet(() -> new PlacesQuotaBucket(memberDayKey));
+        if (memberDay.count(today.toEpochDay()) >= (photo ? photoPerMemberDaily : searchPerMemberDaily)) {
+            throw new BusinessException("PLACES_MEMBER_DAILY_LIMITED",
+                    "회원별 일일 호출 한도를 초과했습니다.", HttpStatus.TOO_MANY_REQUESTS);
         }
         // Both SKUs update the same monthly version, serializing daily creation and month sums.
         String monthKey = "month:" + YearMonth.from(today);
@@ -101,10 +112,12 @@ public class PlacesQuotaService {
             throw new BusinessException("PLACES_QUOTA_EXCEEDED", "Google Places 일일 또는 월간 한도를 초과했습니다.", HttpStatus.SERVICE_UNAVAILABLE);
         }
         rate.increment(minute);
+        memberDay.increment(today.toEpochDay());
         month.increment(0);
         if (photo) day.incrementPhotoCallCount(); else day.incrementCallCount();
         buckets.saveAndFlush(month);
         buckets.save(rate);
+        buckets.save(memberDay);
         daily.save(day);
     }
 

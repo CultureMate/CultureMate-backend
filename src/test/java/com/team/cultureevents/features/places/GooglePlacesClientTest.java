@@ -30,10 +30,10 @@ class GooglePlacesClientTest {
     void invalidInputDoesNotReserveQuota() {
         var quota = mock(PlacesQuotaService.class);
         var client = new GooglePlacesClient(props("key"), RestClient.builder().build(), new ObjectMapper(), quota);
-        assertThatThrownBy(() -> client.searchNearby(Double.NaN, 127, List.of("cafe"), 500, 20)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("food"), 500, 20)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("cafe"), 50001, 20)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> client.resolvePhotoUri("places/a/photos/b?key=other", 400)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.searchNearby(Double.NaN, 127, List.of("cafe"), 500, 20, 1L)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("food"), 500, 20, 1L)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("cafe"), 50001, 20, 1L)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.resolvePhotoUri("places/a/photos/b?key=other", 400, 1L)).isInstanceOf(BusinessException.class);
         org.mockito.Mockito.verifyNoInteractions(quota);
     }
 
@@ -44,8 +44,8 @@ class GooglePlacesClientTest {
         var server = MockRestServiceServer.bindTo(builder).build();
         var client = new GooglePlacesClient(props("key"), builder.build(), new ObjectMapper(), quota);
         org.mockito.Mockito.doThrow(new BusinessException("PLACES_RATE_LIMITED", "limit",
-                org.springframework.http.HttpStatus.TOO_MANY_REQUESTS)).when(quota).reserve(false);
-        assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("cafe"), 500, 20))
+                org.springframework.http.HttpStatus.TOO_MANY_REQUESTS)).when(quota).reserve(false, 1L);
+        assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("cafe"), 500, 20, 1L))
                 .hasFieldOrPropertyWithValue("code", "PLACES_RATE_LIMITED");
         server.verify();
     }
@@ -65,7 +65,7 @@ class GooglePlacesClientTest {
         GooglePlacesClient client = new GooglePlacesClient(
                 props("  "), RestClient.builder().build(), objectMapper, mock(PlacesQuotaService.class));
 
-        assertThatThrownBy(() -> client.searchNearby(37.5, 127.0, List.of("cafe"), 500, 5))
+        assertThatThrownBy(() -> client.searchNearby(37.5, 127.0, List.of("cafe"), 500, 5, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "PLACES_UNAVAILABLE");
     }
@@ -82,9 +82,10 @@ class GooglePlacesClientTest {
                 )))
                 .andRespond(withSuccess(SUCCESS_BODY, MediaType.APPLICATION_JSON));
 
+        PlacesQuotaService quota = mock(PlacesQuotaService.class);
         List<PlaceCandidateDTO> result = new GooglePlacesClient(
-                        props("key"), builder.build(), objectMapper, mock(PlacesQuotaService.class))
-                .searchNearby(37.5, 127.0, List.of("cafe"), 500, 5);
+                        props("key"), builder.build(), objectMapper, quota)
+                .searchNearby(37.5, 127.0, List.of("cafe"), 500, 5, 1L);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("테스트 카페");
@@ -95,6 +96,7 @@ class GooglePlacesClientTest {
         assertThat(result.get(0).authorAttributions().get(1).photoUri()).isEqualTo("https://example.com/b.jpg");
         assertThat(result.get(0).businessStatus()).isEqualTo("OPERATIONAL");
         assertThat(result.get(0).openNow()).isTrue();
+        org.mockito.Mockito.verify(quota).reserve(false, 1L);
         server.verify();
     }
 
@@ -107,7 +109,7 @@ class GooglePlacesClientTest {
         GooglePlacesClient client = new GooglePlacesClient(
                 props("key"), builder.build(), objectMapper, mock(PlacesQuotaService.class));
 
-        assertThatThrownBy(() -> client.searchNearby(37.5, 127.0, List.of("cafe"), 500, 5))
+        assertThatThrownBy(() -> client.searchNearby(37.5, 127.0, List.of("cafe"), 500, 5, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "PLACES_UNAVAILABLE");
     }
@@ -121,10 +123,12 @@ class GooglePlacesClientTest {
                         {"name":"places/p1/photos/abc/media","photoUri":"https://lh3.googleusercontent.com/abc"}
                         """, MediaType.APPLICATION_JSON));
 
-        String photoUri = new GooglePlacesClient(props("key"), builder.build(), objectMapper, mock(PlacesQuotaService.class))
-                .resolvePhotoUri("places/p1/photos/abc", 400);
+        PlacesQuotaService quota = mock(PlacesQuotaService.class);
+        String photoUri = new GooglePlacesClient(props("key"), builder.build(), objectMapper, quota)
+                .resolvePhotoUri("places/p1/photos/abc", 400, 1L);
 
         assertThat(photoUri).isEqualTo("https://lh3.googleusercontent.com/abc");
+        org.mockito.Mockito.verify(quota).reserve(true, 1L);
         server.verify();
     }
 

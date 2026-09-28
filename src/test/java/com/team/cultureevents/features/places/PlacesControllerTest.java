@@ -1,11 +1,16 @@
 package com.team.cultureevents.features.places;
 
+import com.team.cultureevents.features.auth.domain.entity.MemberEntity;
+import com.team.cultureevents.features.auth.service.CurrentMemberService;
+import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.commons.handler.GlobalExceptionHandler;
 import com.team.cultureevents.features.events.service.EventService;
 import com.team.cultureevents.features.places.ctrl.PlacesController;
 import com.team.cultureevents.features.places.service.PlacesService;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.mockito.Mockito.*;
@@ -15,8 +20,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PlacesControllerTest {
     GooglePlacesClient client = mock(GooglePlacesClient.class);
     EventService events = mock(EventService.class);
-    MockMvc mvc = MockMvcBuilders.standaloneSetup(new PlacesController(new PlacesService(client, events)))
-            .setControllerAdvice(new GlobalExceptionHandler()).build();
+    CurrentMemberService currentMember = mock(CurrentMemberService.class);
+    MemberEntity member = mock(MemberEntity.class);
+    MockMvc mvc;
+
+    PlacesControllerTest() {
+        when(member.getMemberId()).thenReturn(1L);
+        when(currentMember.requireMember(any())).thenReturn(member);
+        mvc = MockMvcBuilders.standaloneSetup(new PlacesController(new PlacesService(client, events), currentMember))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {
@@ -35,5 +48,25 @@ class PlacesControllerTest {
     void invalidRequestsAre400WithoutExternalCall(String path) throws Exception {
         mvc.perform(get(path)).andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_PARAM"));
         verifyNoInteractions(client, events);
+    }
+
+    @Test
+    void placesEndpointsRequireLogin() throws Exception {
+        PlacesService places = mock(PlacesService.class);
+        CurrentMemberService unauthorized = mock(CurrentMemberService.class);
+        when(unauthorized.requireMember(any())).thenThrow(
+                new BusinessException("UNAUTHORIZED", "로그인이 필요합니다.", HttpStatus.UNAUTHORIZED));
+        MockMvc authMvc = MockMvcBuilders.standaloneSetup(new PlacesController(places, unauthorized))
+                .setControllerAdvice(new GlobalExceptionHandler()).build();
+
+        for (String path : java.util.List.of(
+                "/api/places/nearby?latitude=37.5&longitude=127",
+                "/api/places/between?eventId1=a&eventId2=b&type=cafe",
+                "/api/places/photo?name=places/a/photos/b")) {
+            authMvc.perform(get(path))
+                    .andExpect(status().isUnauthorized())
+                    .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+        }
+        verifyNoInteractions(places);
     }
 }
