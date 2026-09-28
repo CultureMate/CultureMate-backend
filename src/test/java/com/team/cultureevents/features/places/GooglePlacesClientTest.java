@@ -15,6 +15,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -73,6 +76,10 @@ class GooglePlacesClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo(GooglePlacesClient.ENDPOINT))
                 .andExpect(method(HttpMethod.POST))
+                .andExpect(content().string(allOf(
+                        containsString("\"languageCode\":\"ko\""),
+                        containsString("\"regionCode\":\"KR\"")
+                )))
                 .andRespond(withSuccess(SUCCESS_BODY, MediaType.APPLICATION_JSON));
 
         List<PlaceCandidateDTO> result = new GooglePlacesClient(

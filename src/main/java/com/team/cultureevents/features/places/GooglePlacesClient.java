@@ -99,6 +99,8 @@ public class GooglePlacesClient {
                 "includedTypes", includedTypes,
                 "maxResultCount", maxResults,
                 "rankPreference", "POPULARITY",
+                "languageCode", "ko",
+                "regionCode", "KR",
                 "locationRestriction", Map.of(
                         "circle", Map.of(
                                 "center", Map.of("latitude", latitude, "longitude", longitude),
