@@ -87,7 +87,21 @@ public class FavoriteService {
         if (id.isBlank()) {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
-        List<FavoriteEntity> saved = findAllSaved(memberId, eventService.canonicalEventId(id));
+        // 외부 행사 목록에서 사라진 행사도 저장된 스냅샷 자체는 삭제할 수 있어야 한다.
+        var exact = favoriteRepository.findByMemberIdAndEventId(memberId, id);
+        List<FavoriteEntity> saved;
+        try {
+            saved = findAllSaved(memberId, eventService.canonicalEventId(id));
+        } catch (BusinessException ex) {
+            if (exact.isPresent()) {
+                favoriteRepository.deleteAll(List.of(exact.get()));
+                return;
+            }
+            if ("NOT_FOUND".equals(ex.getCode())) {
+                throw BusinessException.notFound("저장된 행사가 없습니다.");
+            }
+            throw ex;
+        }
         if (saved.isEmpty()) {
             throw BusinessException.notFound("저장된 행사가 없습니다.");
         }

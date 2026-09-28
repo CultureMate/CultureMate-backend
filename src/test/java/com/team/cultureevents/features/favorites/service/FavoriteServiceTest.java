@@ -128,6 +128,19 @@ class FavoriteServiceTest {
     }
 
     @Test
+    void deleteRemovesStoredFavoriteEvenWhenEventDisappearedFromUpstream() {
+        FavoriteEntity removed = new FavoriteEntity(1L, "removed-event", "종료된 행사",
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), "문화회관", Instant.now());
+        when(repository.findByMemberIdAndEventId(1L, "removed-event")).thenReturn(Optional.of(removed));
+        when(events.canonicalEventId("removed-event"))
+                .thenThrow(BusinessException.notFound("존재하지 않는 행사입니다."));
+
+        service.delete(1L, "removed-event");
+
+        verify(repository).deleteAll(List.of(removed));
+    }
+
+    @Test
     void favoritesAreSeparatedByMember() {
         FavoriteEntity ofMemberA = new FavoriteEntity(1L, "event-1", "가을 전시",
                 LocalDate.of(2026, 9, 20), LocalDate.of(2026, 9, 25), "문화회관", Instant.parse("2026-09-21T00:00:00Z"));
