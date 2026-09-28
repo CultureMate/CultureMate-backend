@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.net.URI;
 import java.util.List;
 
 @RestController
@@ -29,5 +30,33 @@ public class PlacesController {
     ) {
         return ResponseEntity.status(HttpStatus.OK)
                 .body(placesService.recommendNearby(latitude, longitude, types, radius, maxResults));
+    }
+
+    /**
+     * 코스에서 연속된 두 행사 사이에 끼워 넣을 카페/음식점을 찾는다.
+     * 두 행사 좌표의 중점을 중심으로, 둘 사이 거리의 절반을 반경으로 검색한다.
+     * type당 최대 20개를 평점순으로 정렬해 한 번에 전부 돌려준다(프론트가 5개씩 페이지로 나눠 보여줌).
+     */
+    @GetMapping("/api/places/between")
+    public ResponseEntity<List<PlaceCandidateDTO>> between(
+            @RequestParam String eventId1,
+            @RequestParam String eventId2,
+            @RequestParam String type
+    ) {
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(placesService.recommendBetweenEvents(eventId1, eventId2, type));
+    }
+
+    /**
+     * 프론트가 <img src="/api/places/photo?name=..."> 로 바로 쓸 수 있게, 구글 사진 CDN으로 302 리다이렉트한다.
+     * API 키는 이 서버 안에서만 쓰이고 프론트·브라우저에는 절대 노출되지 않는다.
+     */
+    @GetMapping("/api/places/photo")
+    public ResponseEntity<Void> photo(
+            @RequestParam String name,
+            @RequestParam(required = false) Integer maxWidthPx
+    ) {
+        String photoUri = placesService.resolvePhotoUri(name, maxWidthPx);
+        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(photoUri)).build();
     }
 }

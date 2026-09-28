@@ -34,8 +34,22 @@ class GooglePlacesClientTest {
     private static final String SUCCESS_BODY = """
             {"places":[{"id":"p1","displayName":{"text":"테스트 카페"},"formattedAddress":"주소",
             "rating":4.5,"userRatingCount":100,"location":{"latitude":37.5,"longitude":127.0},
-            "googleMapsUri":"https://maps.google.com/?cid=1"}]}
+            "googleMapsUri":"https://maps.google.com/?cid=1","businessStatus":"OPERATIONAL",
+            "currentOpeningHours":{"openNow":true},
+            "photos":[{"name":"places/p1/photos/abc","authorAttributions":[{"displayName":"홍길동"}]}]}]}
             """;
+
+    private static PlacesApiUsageRepository fakeUsageRepository() {
+        PlacesApiUsageRepository usageRepository = mock(PlacesApiUsageRepository.class);
+        AtomicReference<PlacesApiUsageEntity> stored = new AtomicReference<>();
+        when(usageRepository.findById(any())).thenAnswer(inv -> Optional.ofNullable(stored.get()));
+        when(usageRepository.save(any())).thenAnswer(inv -> {
+            PlacesApiUsageEntity entity = inv.getArgument(0);
+            stored.set(entity);
+            return entity;
+        });
+        return usageRepository;
+    }
 
     @Test
     void missingKeyIs503WithoutCallingGoogle() {
@@ -48,7 +62,7 @@ class GooglePlacesClientTest {
     }
 
     @Test
-    void successfulCallParsesCandidates() {
+    void successfulCallParsesCandidatesIncludingPhoto() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo(GooglePlacesClient.ENDPOINT))
@@ -62,6 +76,10 @@ class GooglePlacesClientTest {
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("테스트 카페");
         assertThat(result.get(0).rating()).isEqualTo(4.5);
+        assertThat(result.get(0).photoName()).isEqualTo("places/p1/photos/abc");
+        assertThat(result.get(0).photoAttribution()).isEqualTo("홍길동");
+        assertThat(result.get(0).businessStatus()).isEqualTo("OPERATIONAL");
+        assertThat(result.get(0).openNow()).isTrue();
         server.verify();
     }
 
@@ -86,23 +104,51 @@ class GooglePlacesClientTest {
         server.expect(ExpectedCount.times(GooglePlacesClient.DAILY_CALL_LIMIT), requestTo(GooglePlacesClient.ENDPOINT))
                 .andRespond(withSuccess(SUCCESS_BODY, MediaType.APPLICATION_JSON));
 
-        // 진짜 DB 없이, Repository가 하는 일(저장하고 다시 읽어오기)만 흉내 내는 가짜 저장소.
-        PlacesApiUsageRepository usageRepository = mock(PlacesApiUsageRepository.class);
-        AtomicReference<PlacesApiUsageEntity> stored = new AtomicReference<>();
-        when(usageRepository.findById(any())).thenAnswer(inv -> Optional.ofNullable(stored.get()));
-        when(usageRepository.save(any())).thenAnswer(inv -> {
-            PlacesApiUsageEntity entity = inv.getArgument(0);
-            stored.set(entity);
-            return entity;
-        });
-
-        GooglePlacesClient client = new GooglePlacesClient(props("key"), builder.build(), objectMapper, usageRepository);
+        GooglePlacesClient client = new GooglePlacesClient(props("key"), builder.build(), objectMapper, fakeUsageRepository());
 
         for (int i = 0; i < GooglePlacesClient.DAILY_CALL_LIMIT; i++) {
             client.searchNearby(37.5, 127.0, List.of("cafe"), 500, 5);
         }
 
         assertThatThrownBy(() -> client.searchNearby(37.5, 127.0, List.of("cafe"), 500, 5))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "PLACES_QUOTA_EXCEEDED");
+
+        server.verify();
+    }
+
+    @Test
+    void resolvePhotoUriReturnsCdnLinkWithoutApiKey() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"name":"places/p1/photos/abc/media","photoUri":"https://lh3.googleusercontent.com/abc"}
+                        """, MediaType.APPLICATION_JSON));
+
+        String photoUri = new GooglePlacesClient(props("key"), builder.build(), objectMapper, mock(PlacesApiUsageRepository.class))
+                .resolvePhotoUri("places/p1/photos/abc", 400);
+
+        assertThat(photoUri).isEqualTo("https://lh3.googleusercontent.com/abc");
+        server.verify();
+    }
+
+    @Test
+    void photoDailyQuotaBlocksCallsAfterLimitWithoutContactingGoogle() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(ExpectedCount.times(GooglePlacesClient.DAILY_PHOTO_LIMIT), method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"name":"places/p1/photos/abc/media","photoUri":"https://lh3.googleusercontent.com/abc"}
+                        """, MediaType.APPLICATION_JSON));
+
+        GooglePlacesClient client = new GooglePlacesClient(props("key"), builder.build(), objectMapper, fakeUsageRepository());
+
+        for (int i = 0; i < GooglePlacesClient.DAILY_PHOTO_LIMIT; i++) {
+            client.resolvePhotoUri("places/p1/photos/abc", 400);
+        }
+
+        assertThatThrownBy(() -> client.resolvePhotoUri("places/p1/photos/abc", 400))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "PLACES_QUOTA_EXCEEDED");
 

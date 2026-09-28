@@ -8,6 +8,10 @@ public record PlaceCandidateDTO(
         Integer userRatingCount,
         Double latitude,
         Double longitude,
-        String mapUrl
+        String mapUrl,
+        String photoName,
+        String photoAttribution,
+        String businessStatus,
+        Boolean openNow
 ) {
 }
