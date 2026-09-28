@@ -51,7 +51,8 @@ public class GooglePlacesClient {
             "places.googleMapsUri",
             "places.photos",
             "places.businessStatus",
-            "places.currentOpeningHours.openNow"
+            "places.currentOpeningHours.openNow",
+            "places.regularOpeningHours.weekdayDescriptions"
     );
 
     private final AppProperties props;
@@ -253,6 +254,17 @@ public class GooglePlacesClient {
         Boolean openNow = p.path("currentOpeningHours").hasNonNull("openNow")
                 ? p.path("currentOpeningHours").get("openNow").asBoolean()
                 : null;
+
+        List<String> openingHours = new ArrayList<>();
+        JsonNode weekdayDescriptions = p.path("regularOpeningHours").get("weekdayDescriptions");
+        if (weekdayDescriptions != null && weekdayDescriptions.isArray()) {
+            for (JsonNode description : weekdayDescriptions) {
+                if (description.isTextual()) {
+                    openingHours.add(description.asText());
+                }
+            }
+        }
+
         return new PlaceCandidateDTO(
                 textOrNull(p, "id"),
                 p.path("displayName").path("text").asText(null),
@@ -265,7 +277,10 @@ public class GooglePlacesClient {
                 photoName,
                 photoAttributions,
                 textOrNull(p, "businessStatus"),
-                openNow, null, null
+                openNow,
+                openingHours,
+                null,
+                null
         );
     }
 
