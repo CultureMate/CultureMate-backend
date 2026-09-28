@@ -7,11 +7,13 @@ import com.team.cultureevents.features.summary.OpenAiClient;
 import com.team.cultureevents.features.summary.domain.dto.SummaryResponseDTO;
 import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
 import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -33,6 +36,13 @@ class SummaryServiceTest {
     private final EventService events = mock(EventService.class);
     private final OpenAiClient openAi = mock(OpenAiClient.class);
     private final SummaryService service = new SummaryService(summaries, events, openAi);
+
+    @BeforeEach
+    void eventIdsPassThrough() {
+        lenient().when(events.canonicalEventId(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(events.eventIdsIncludingAliases(any()))
+                .thenAnswer(invocation -> List.of(invocation.getArgument(0, String.class)));
+    }
 
     @Test
     void savedSummaryDoesNotCallOpenAi() {
@@ -128,6 +138,28 @@ class SummaryServiceTest {
 
         assertThat(calls).hasValue(1);
         verify(openAi, times(1)).chat(anyString(), anyString());
+    }
+
+    @Test
+    void aliasRequestSavesSummaryUnderCanonicalId() {
+        when(events.canonicalEventId("alias")).thenReturn("canonical");
+        when(events.eventIdsIncludingAliases("canonical")).thenReturn(List.of("canonical", "alias"));
+        when(summaries.findById("canonical")).thenReturn(Optional.empty());
+        when(summaries.findById("alias")).thenReturn(Optional.empty());
+        when(events.getDetail("canonical")).thenReturn(new EventDetailResponseDTO(
+                "canonical", "제목", "전시", "마포구", "장소",
+                "2026-09-01", "2026-09-30", "무료", "서울시",
+                "https://example.com", null, 0));
+        when(openAi.chat(anyString(), anyString())).thenReturn("새 소개문");
+        when(summaries.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        SummaryResponseDTO result = service.createOrGet("alias");
+
+        assertThat(result.eventId()).isEqualTo("canonical");
+        assertThat(result.summary()).isEqualTo("새 소개문");
+        org.mockito.ArgumentCaptor<AiSummaryEntity> captor = org.mockito.ArgumentCaptor.forClass(AiSummaryEntity.class);
+        verify(summaries).save(captor.capture());
+        assertThat(captor.getValue().getEventId()).isEqualTo("canonical");
     }
 
     private static EventDetailResponseDTO detail() {

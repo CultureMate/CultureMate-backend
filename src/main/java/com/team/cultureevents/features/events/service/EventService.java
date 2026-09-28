@@ -91,14 +91,27 @@ public class EventService {
     }
 
     public EventDetailResponseDTO getDetail(String rawEventId) {
+        return toDetail(requireEvent(rawEventId));
+    }
+
+    /** 요청 eventId가 별칭이면 대표 eventId로 바꾼다. 없는 행사면 404. */
+    public String canonicalEventId(String rawEventId) {
+        return requireEvent(rawEventId).eventId();
+    }
+
+    /** 대표 ID와, 그 행사로 합쳐진 별칭 ID. 기존에 별칭으로 저장된 데이터를 함께 조회할 때 쓴다. */
+    public List<String> eventIdsIncludingAliases(String rawEventId) {
+        return idsOf(requireEvent(rawEventId));
+    }
+
+    private SeoulEvent requireEvent(String rawEventId) {
         String eventId = rawEventId == null ? "" : rawEventId.trim();
         if (eventId.isBlank()) {
             throw BusinessException.badRequest("eventId가 필요합니다.");
         }
         return loadEvents().stream()
-                .filter(e -> eventId.equals(e.eventId()))
+                .filter(e -> eventId.equals(e.eventId()) || e.aliasIds().contains(eventId))
                 .findFirst()
-                .map(this::toDetail)
                 .orElseThrow(() -> BusinessException.notFound("존재하지 않는 행사입니다."));
     }
 
@@ -123,12 +136,14 @@ public class EventService {
 
     private EventDetailResponseDTO toDetail(SeoulEvent e) {
         boolean invalidPeriod = EventDates.inverted(e.startDate(), e.endDate());
-        int viewCount = eventViewRepository.findById(e.eventId())
-                .map(v -> v.getViewCount())
-                .orElse(0);
-        String summary = aiSummaryRepository.findById(e.eventId())
-                .map(AiSummaryEntity::getSummary)
-                .orElse(null);
+        int viewCount = 0;
+        String summary = null;
+        for (String id : idsOf(e)) {
+            viewCount += eventViewRepository.findById(id).map(v -> v.getViewCount()).orElse(0);
+            if (summary == null) {
+                summary = aiSummaryRepository.findById(id).map(AiSummaryEntity::getSummary).orElse(null);
+            }
+        }
         return new EventDetailResponseDTO(
                 e.eventId(), e.title(), e.category(), e.district(), e.place(),
                 invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
@@ -136,6 +151,16 @@ public class EventService {
                 emptyToBlank(e.originalUrl()), emptyToBlank(e.imageUrl()), viewCount,
                 e.latitude(), e.longitude(), summary
         );
+    }
+
+    private static List<String> idsOf(SeoulEvent event) {
+        if (event.aliasIds().isEmpty()) {
+            return List.of(event.eventId());
+        }
+        List<String> ids = new ArrayList<>();
+        ids.add(event.eventId());
+        ids.addAll(event.aliasIds());
+        return List.copyOf(ids);
     }
 
     private static String emptyToBlank(String v) {

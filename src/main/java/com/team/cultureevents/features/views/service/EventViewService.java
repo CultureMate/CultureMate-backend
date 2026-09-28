@@ -19,16 +19,15 @@ public class EventViewService {
         this.eventService = eventService;
     }
 
-    /** 행사가 없으면 404. 없으면 0에서 시작해 +1. */
+    /** 행사가 없으면 404. 없으면 0에서 시작해 +1. 별칭에 쌓인 조회수도 합산한다. */
     @Transactional
     public EventViewResponseDTO increment(String rawEventId) {
-        String eventId = requireEventId(rawEventId);
-        eventService.getDetail(eventId);
+        String eventId = eventService.canonicalEventId(requireEventId(rawEventId));
         EventViewEntity entity = eventViewRepository.findById(eventId)
                 .orElseGet(() -> new EventViewEntity(eventId, 0));
         int count = entity.increment();
         eventViewRepository.save(entity);
-        return new EventViewResponseDTO(eventId, count);
+        return new EventViewResponseDTO(eventId, count + aliasViewCount(eventId));
     }
 
     @Transactional(readOnly = true)
@@ -39,6 +38,17 @@ public class EventViewService {
         return eventViewRepository.findById(eventId.trim())
                 .map(EventViewEntity::getViewCount)
                 .orElse(0);
+    }
+
+    private int aliasViewCount(String canonicalEventId) {
+        int extra = 0;
+        for (String id : eventService.eventIdsIncludingAliases(canonicalEventId)) {
+            if (canonicalEventId.equals(id)) {
+                continue;
+            }
+            extra += eventViewRepository.findById(id).map(EventViewEntity::getViewCount).orElse(0);
+        }
+        return extra;
     }
 
     private static String requireEventId(String rawEventId) {

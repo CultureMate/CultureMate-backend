@@ -73,6 +73,14 @@ public class MainHomeService {
         return new HomeEventsResponseDTO(events, target);
     }
 
+    private static int viewCount(SeoulEvent event, Map<String, Integer> views) {
+        int total = views.getOrDefault(event.eventId(), 0);
+        for (String aliasId : event.aliasIds()) {
+            total += views.getOrDefault(aliasId, 0);
+        }
+        return total;
+    }
+
     private Map<String, Integer> viewMap() {
         return eventViewRepository.findAll().stream()
                 .collect(Collectors.toMap(EventViewEntity::getEventId, EventViewEntity::getViewCount, (a, b) -> a));
@@ -104,7 +112,7 @@ public class MainHomeService {
                 start,
                 end,
                 nullToEmpty(e.imageUrl()),
-                views.getOrDefault(e.eventId(), 0),
+                viewCount(e, views),
                 dDay
         );
     }
