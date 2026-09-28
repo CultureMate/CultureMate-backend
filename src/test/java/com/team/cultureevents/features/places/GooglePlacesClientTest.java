@@ -34,7 +34,7 @@ class GooglePlacesClientTest {
         assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("food"), 500, 20, 1L)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("cafe"), 50001, 20, 1L)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.resolvePhotoUri("places/a/photos/b?key=other", 400, 1L)).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> client.getDetails("bad/place/id", "127.0.0.1")).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.getDetails("bad/place/id", 1L)).isInstanceOf(BusinessException.class);
         org.mockito.Mockito.verifyNoInteractions(quota);
     }
 
@@ -116,11 +116,11 @@ class GooglePlacesClientTest {
                         """, MediaType.APPLICATION_JSON));
 
         PlaceCandidateDTO result = new GooglePlacesClient(props("key"), builder.build(), objectMapper, quota)
-                .getDetails("p1", "127.0.0.1");
+                .getDetails("p1", 1L);
 
         assertThat(result.placeId()).isEqualTo("p1");
         assertThat(result.name()).isEqualTo("테스트 카페");
-        org.mockito.Mockito.verify(quota).reserveDetails("127.0.0.1");
+        org.mockito.Mockito.verify(quota).reserveDetails(1L);
         server.verify();
     }
 

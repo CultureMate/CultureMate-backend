@@ -129,14 +129,14 @@ public class GooglePlacesClient {
 
 
     /** 저장된 코스의 placeId를 화면에 표시할 최신 장소 정보로 다시 조회한다. */
-    public PlaceCandidateDTO getDetails(String placeId, String clientIdentity) {
+    public PlaceCandidateDTO getDetails(String placeId, long memberId) {
         PlacesRequestValidator.placeId(placeId);
         String key = props.places().key();
         if (key == null || key.isBlank()) {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
         }
 
-        quotaService.reserveDetails(clientIdentity);
+        quotaService.reserveDetails(memberId);
 
         String uri = PLACE_DETAILS_BASE_URL + placeId + "?languageCode=ko&regionCode=KR";
         String responseJson;

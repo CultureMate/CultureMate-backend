@@ -99,27 +99,28 @@ class PlacesQuotaServiceTest {
                 100, 100, 1,
                 100, 100, 1,
                 clock);
-        svc.reserveDetails("a");
-        assertThatThrownBy(() -> svc.reserveDetails("a"))
+        svc.reserveDetails(1L);
+        assertThatThrownBy(() -> svc.reserveDetails(1L))
                 .hasFieldOrPropertyWithValue("code", "PLACES_RATE_LIMITED");
+        svc.reserve(false, 1L);
         var stored = daily.findById(today).orElseThrow();
-        assertThat(stored.getCallCount()).isZero();
+        assertThat(stored.getCallCount()).isEqualTo(1);
         assertThat(stored.getPhotoCallCount()).isZero();
         assertThat(stored.getDetailCallCount()).isEqualTo(1);
     }
 
-    @Test void detailDailyLimitDoesNotAffectOtherClients() {
+    @Test void detailDailyLimitIsPerMember() {
         var svc = new PlacesQuotaService(daily, buckets, manager,
                 900, 900, 900,
                 100, 100, 100,
                 100, 100, 2,
                 clock);
-        svc.reserveDetails("client-a");
-        svc.reserveDetails("client-a");
-        assertThatThrownBy(() -> svc.reserveDetails("client-a"))
-                .hasFieldOrPropertyWithValue("code", "PLACES_CLIENT_DAILY_LIMITED");
+        svc.reserveDetails(1L);
+        svc.reserveDetails(1L);
+        assertThatThrownBy(() -> svc.reserveDetails(1L))
+                .hasFieldOrPropertyWithValue("code", "PLACES_MEMBER_DAILY_LIMITED");
 
-        svc.reserveDetails("client-b");
+        svc.reserveDetails(2L);
         assertThat(daily.findById(today).orElseThrow().getDetailCallCount()).isEqualTo(3);
     }
 

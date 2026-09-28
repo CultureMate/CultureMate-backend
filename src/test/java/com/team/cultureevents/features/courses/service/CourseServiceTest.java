@@ -70,6 +70,18 @@ class CourseServiceTest {
     }
 
     @Test
+    void createRejectsWhenMemberAlreadyHas50Courses() {
+        when(events.getDetail("event-1")).thenReturn(event("event-1", "행사"));
+        when(courses.countByMemberId(7L)).thenReturn(50L);
+
+        assertThatThrownBy(() -> service.create(7L, new CourseCreateRequestDTO(
+                "51번째", List.of(new CourseStopRequestDTO("event", "event-1", null)))))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", "COURSE_LIMIT_EXCEEDED");
+        verify(courses, never()).save(any());
+    }
+
+    @Test
     void updateReusesExistingEventSnapshotAndIncrementsContentVersion() {
         CourseEntity course = courseWithEvent(7L, "event-1", "저장 당시 제목");
         when(courses.findByIdForUpdate(10L)).thenReturn(Optional.of(course));

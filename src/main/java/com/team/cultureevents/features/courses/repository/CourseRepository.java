@@ -17,6 +17,8 @@ public interface CourseRepository extends JpaRepository<CourseEntity, Long> {
 
     List<CourseEntity> findByMemberIdAndFavoritedTrueOrderByFavoritedAtDesc(Long memberId);
 
+    long countByMemberId(Long memberId);
+
     @EntityGraph(attributePaths = "stops")
     @Query("select c from CourseEntity c where c.courseId = :courseId")
     Optional<CourseEntity> findWithStopsById(@Param("courseId") Long courseId);

@@ -49,4 +49,4 @@ app:
     detail-per-minute: ${PLACES_DETAIL_PER_MINUTE:20}
     search-per-member-daily: ${PLACES_SEARCH_PER_MEMBER_DAILY:20}
     photo-per-member-daily: ${PLACES_PHOTO_PER_MEMBER_DAILY:20}
-    detail-per-client-daily: ${PLACES_DETAIL_PER_CLIENT_DAILY:20}
+    detail-per-member-daily: ${PLACES_DETAIL_PER_MEMBER_DAILY:20}

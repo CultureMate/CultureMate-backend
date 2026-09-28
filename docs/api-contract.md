@@ -20,13 +20,13 @@
 | `NOT_FOUND` | 404 | 행사 또는 찜 없음 |
 | `ALREADY_SAVED` | 409 | 같은 회원·같은 행사 중복 찜 |
 | `COURSE_VERSION_CONFLICT` | 409 | 코스가 다른 곳에서 먼저 수정됨. 최신 상세를 다시 조회한 뒤 재시도 |
+| `COURSE_LIMIT_EXCEEDED` | 409 | 회원당 저장 가능한 코스(50개) 초과. 기존 코스를 삭제한 뒤 재시도 |
 | `UPSTREAM_UNAVAILABLE` | 502 | 서울시 API 실패 |
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
 | `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
 | `PLACES_UNAVAILABLE` | 503 | Google Places 조회 실패(키 미설정 포함) |
-| `PLACES_RATE_LIMITED` | 429 | Places 1분 호출 한도 초과(회원별 검색 20회·사진 40회, 접속 클라이언트별 상세 20회). 약 1분 뒤 재시도 |
-| `PLACES_MEMBER_DAILY_LIMITED` | 429 | 같은 회원의 Places 일일 호출 한도 초과(기본 검색·사진 각 20회) |
-| `PLACES_CLIENT_DAILY_LIMITED` | 429 | 같은 접속 클라이언트의 Places 상세 일일 호출 한도 초과(기본 20회) |
+| `PLACES_RATE_LIMITED` | 429 | 같은 회원의 Places 1분 호출 한도 초과(검색 20회·사진 40회·상세 20회). 약 1분 뒤 재시도 |
+| `PLACES_MEMBER_DAILY_LIMITED` | 429 | 같은 회원의 Places 일일 호출 한도 초과(기본 검색·사진·상세 각 20회) |
 | `PLACES_QUOTA_EXCEEDED` | 503 | 서버 전체 Places 일일(검색 80·사진 60·상세 80) 또는 월간(각 900) 한도 초과 |
 | `PLACES_QUOTA_BUSY` | 503 | 호출량 기록 충돌이 반복되어 처리하지 못함. 잠시 후 재시도 |
 | `SHARE_ID_UNAVAILABLE` | 503 | 코스 공유 ID 생성 실패. 잠시 후 재시도 |
@@ -221,26 +221,23 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 | 구분 | 검색(`nearby` + `between`) | 사진(`photo`) | 상세(`details`) | 초과 시 |
 |------|------:|------:|------:|------|
-| 같은 회원, 1분 | 20회 | 40회 | - | `429 PLACES_RATE_LIMITED` |
-| 같은 회원, 하루 | 20회 | 20회 | - | `429 PLACES_MEMBER_DAILY_LIMITED` |
-| 같은 접속 클라이언트, 1분 | - | - | 20회 | `429 PLACES_RATE_LIMITED` |
-| 같은 접속 클라이언트, 하루 | - | - | 20회 | `429 PLACES_CLIENT_DAILY_LIMITED` |
+| 같은 회원, 1분 | 20회 | 40회 | 20회 | `429 PLACES_RATE_LIMITED` |
+| 같은 회원, 하루 | 20회 | 20회 | 20회 | `429 PLACES_MEMBER_DAILY_LIMITED` |
 | 서버 전체, 하루 | 80회 | 60회 | 80회 | `503 PLACES_QUOTA_EXCEEDED` |
 | 서버 전체, 한 달 | 900회 | 900회 | 900회 | `503 PLACES_QUOTA_EXCEEDED` |
 
 - 실제로 Google에 요청이 나가는 호출만 셉니다. 검증에 실패한 요청은 세지 않고, 한도에 걸린 요청은
   어떤 카운트도 차감하지 않습니다.
-- 검색·사진 제한 기준은 로그인 회원 ID입니다. Docker/Nginx 뒤에서도 회원마다 별도로 집계됩니다.
-  공개 상세 조회는 접속 IP를 기준으로 집계하므로 프록시 배포 시 전달 IP 설정이 필요합니다. 1분 제한은
-  정각 분 단위 고정 구간입니다.
+- 검색·사진·상세 모두 로그인이 필요하고, 제한 기준은 로그인 회원 ID입니다. Docker/Nginx 뒤에서도
+  회원마다 별도로 집계됩니다. 1분 제한은 정각 분 단위 고정 구간입니다.
 - 하루·한 달 경계는 미국 태평양 시간 기준입니다(구글 무료 사용량 갱신 시점). 한국 시간으로는 하루가
   오후 4~5시경(서머타임 여부에 따라)에 바뀝니다.
-- `PLACES_RATE_LIMITED`는 약 1분 뒤에, 회원·클라이언트 일일 제한은 다음 날에 풀립니다.
+- `PLACES_RATE_LIMITED`는 약 1분 뒤에, 회원 일일 제한은 다음 날에 풀립니다.
   `503 PLACES_QUOTA_EXCEEDED`는 서버 전체 기준이라 다음 날 또는 다음 달에 풀립니다.
 - 월간·분당·개별 일일 값은 환경변수(`PLACES_SEARCH_MONTHLY_LIMIT`, `PLACES_PHOTO_MONTHLY_LIMIT`,
   `PLACES_DETAIL_MONTHLY_LIMIT`, `PLACES_SEARCH_PER_MINUTE`, `PLACES_PHOTO_PER_MINUTE`,
   `PLACES_DETAIL_PER_MINUTE`, `PLACES_SEARCH_PER_MEMBER_DAILY`, `PLACES_PHOTO_PER_MEMBER_DAILY`,
-  `PLACES_DETAIL_PER_CLIENT_DAILY`)로 바꿀 수 있습니다. 서버 전체 하루 한도(검색 80·사진 60·상세 80)는
+  `PLACES_DETAIL_PER_MEMBER_DAILY`)로 바꿀 수 있습니다. 서버 전체 하루 한도(검색 80·사진 60·상세 80)는
   코드 상수입니다.
 - 코스 하나(행사 N개)를 채우면 검색 호출이 `(N-1) * 2`번 나갑니다(구간마다 카페·음식점 각 1회).
 
@@ -355,7 +352,7 @@ GET /api/places/between?eventId1=...&eventId2=...&type=restaurant
 ### `GET /api/places/details`
 
 저장된 코스에는 카페·음식점의 `placeId`만 보관하므로, 코스를 다시 열 때 최신 장소 정보를 가져오는 용도입니다.
-로그인은 필요하지 않습니다. 공유 코스 화면에서도 동일하게 사용할 수 있습니다.
+로그인이 필요합니다(없으면 `401`). 공유 코스 화면도 로그인한 회원만 볼 수 있으므로 동일하게 사용합니다.
 
 | 파라미터 | 필수 | 의미 |
 |----------|------|------|
@@ -366,8 +363,9 @@ GET /api/places/details?placeId=ChIJ...
 ```
 
 응답은 `nearby`와 같은 `PlaceCandidateDTO` 형식이며 `detourMeters`, `recommendationScore`는 `null`입니다.
-이 호출은 검색·사진과 별도의 상세 조회 호출량을 사용합니다. 저장된 코스 카드 여러 개의 장소 정보를 한꺼번에
-미리 요청하지 말고, 실제 상세 화면에서 필요한 스탑만 조회하세요.
+이 호출은 검색·사진과 별도의 상세 조회 호출량을 사용하며, 같은 회원 기준 하루 20회까지입니다. 저장된 코스
+카드 여러 개의 장소 정보를 한꺼번에 미리 요청하지 말고, 실제 상세 화면에서 필요한 스탑만 조회하세요. 같은
+화면에서 이미 받은 장소 정보는 다시 요청하지 말고 재사용하세요.
 
 ### `GET /api/places/photo`
 
@@ -412,6 +410,7 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 
 - 제목: 공백을 제외하고 1자 이상, 최대 50자. 서버가 제목을 자동 생성하지 않습니다.
 - 스탑: 1~20개, **행사 스탑이 최소 1개** 있어야 합니다. 같은 행사 또는 같은 장소를 두 번 넣을 수 없습니다.
+- 코스 개수: 회원당 최대 50개. 초과하면 `409 COURSE_LIMIT_EXCEEDED`입니다.
 - `type`: `event`, `cafe`, `restaurant`. `event`는 `eventId`, 나머지는 `placeId`만 보냅니다.
 - 서버는 요청 배열 순서를 그대로 `stopOrder` 0부터 저장합니다.
 - 행사 스탑은 저장 시 서버가 행사 상세를 다시 확인하고 제목·장소·기간·이미지·좌표 스냅샷을 저장합니다.
@@ -476,7 +475,7 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 |--------|------|--------|------|
 | POST | `/api/courses/{courseId}/share` | 필요 | `200 { "shareId": "..." }` (이미 켜져 있으면 같은 ID) |
 | DELETE | `/api/courses/{courseId}/share` | 필요 | `204`, 기존 공유 링크 즉시 무효 |
-| GET | `/api/courses/shared/{shareId}` | 불필요 | 제목·생성/수정일·스탑만 반환. 회원/별표 정보는 노출하지 않음 |
+| GET | `/api/courses/shared/{shareId}` | 필요 | 로그인한 회원이면 누구나 조회 가능. 제목·생성/수정일·스탑만 반환하고 소유자/별표 정보는 노출하지 않음 |
 
 회원 탈퇴(`DELETE /api/auth/me`) 시 세션·관심행사와 함께 해당 회원의 코스/코스 스탑도 삭제됩니다.
 
@@ -498,5 +497,5 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 7. `POST /api/events/views?eventId=...` → 상세 `viewCount` 증가 확인
 8. `GET /api/main/hot-events?limit=6` · `GET /api/main/upcoming-events?limit=6`
 9. 로그인 후 코스 POST → GET 목록/상세 → PUT(version 포함) → favorite → share → DELETE
-10. 공유된 `shareId`로 로그아웃 상태에서 `GET /api/courses/shared/{shareId}`
-11. 저장된 장소 `placeId`로 `GET /api/places/details?placeId=...`
+10. 공유된 `shareId`로 다른 회원 로그인 상태에서 `GET /api/courses/shared/{shareId}` (로그아웃 상태면 `401`)
+11. 로그인 후 저장된 장소 `placeId`로 `GET /api/places/details?placeId=...`

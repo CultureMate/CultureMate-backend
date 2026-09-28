@@ -61,8 +61,9 @@ public class PlacesController {
             @RequestParam String placeId,
             HttpServletRequest request
     ) {
+        long memberId = currentMember.requireMember(request).getMemberId();
         return ResponseEntity.status(HttpStatus.OK)
-                .body(placesService.getDetails(placeId, request.getRemoteAddr()));
+                .body(placesService.getDetails(placeId, memberId));
     }
 
     /**

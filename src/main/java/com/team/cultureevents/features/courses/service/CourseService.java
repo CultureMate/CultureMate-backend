@@ -34,6 +34,7 @@ public class CourseService {
 
     private static final int MAX_TITLE_LENGTH = 50;
     private static final int MAX_STOPS = 20;
+    private static final int MAX_COURSES_PER_MEMBER = 50;
     private static final int MAX_PLACE_ID_LENGTH = 255;
 
     private final CourseRepository courseRepository;
@@ -47,6 +48,10 @@ public class CourseService {
     public CourseDetailResponseDTO create(Long memberId, CourseCreateRequestDTO request) {
         String title = validateTitle(request == null ? null : request.title());
         List<CourseStopEntity> stops = buildStops(request == null ? null : request.stops(), Map.of());
+        if (courseRepository.countByMemberId(memberId) >= MAX_COURSES_PER_MEMBER) {
+            throw new BusinessException("COURSE_LIMIT_EXCEEDED",
+                    "코스는 회원당 최대 50개까지 저장할 수 있습니다.", HttpStatus.CONFLICT);
+        }
         Instant now = Instant.now();
 
         CourseEntity course = new CourseEntity(memberId, title, now);

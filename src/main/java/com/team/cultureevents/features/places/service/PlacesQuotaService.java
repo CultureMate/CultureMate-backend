@@ -42,7 +42,7 @@ public class PlacesQuotaService {
     private final int detailPerMinute;
     private final int searchPerMemberDaily;
     private final int photoPerMemberDaily;
-    private final int detailPerClientDaily;
+    private final int detailPerMemberDaily;
     private final Clock clock;
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -56,11 +56,11 @@ public class PlacesQuotaService {
             @Value("${app.places.detail-per-minute:20}") int detailPerMinute,
             @Value("${app.places.search-per-member-daily:20}") int searchPerMemberDaily,
             @Value("${app.places.photo-per-member-daily:20}") int photoPerMemberDaily,
-            @Value("${app.places.detail-per-client-daily:20}") int detailPerClientDaily) {
+            @Value("${app.places.detail-per-member-daily:20}") int detailPerMemberDaily) {
         this(daily, buckets, manager,
                 searchMonthly, photoMonthly, detailMonthly,
                 searchPerMinute, photoPerMinute, detailPerMinute,
-                searchPerMemberDaily, photoPerMemberDaily, detailPerClientDaily,
+                searchPerMemberDaily, photoPerMemberDaily, detailPerMemberDaily,
                 Clock.system(ZoneId.of("America/Los_Angeles")));
     }
 
@@ -68,11 +68,11 @@ public class PlacesQuotaService {
             PlatformTransactionManager manager,
             int searchMonthly, int photoMonthly, int detailMonthly,
             int searchPerMinute, int photoPerMinute, int detailPerMinute,
-            int searchPerMemberDaily, int photoPerMemberDaily, int detailPerClientDaily,
+            int searchPerMemberDaily, int photoPerMemberDaily, int detailPerMemberDaily,
             Clock clock) {
         if (searchMonthly < 0 || photoMonthly < 0 || detailMonthly < 0
                 || searchPerMinute < 0 || photoPerMinute < 0 || detailPerMinute < 0
-                || searchPerMemberDaily < 0 || photoPerMemberDaily < 0 || detailPerClientDaily < 0) {
+                || searchPerMemberDaily < 0 || photoPerMemberDaily < 0 || detailPerMemberDaily < 0) {
             throw new IllegalArgumentException("Places 호출 제한은 0 이상이어야 합니다.");
         }
         this.daily = daily;
@@ -85,7 +85,7 @@ public class PlacesQuotaService {
         this.detailPerMinute = detailPerMinute;
         this.searchPerMemberDaily = searchPerMemberDaily;
         this.photoPerMemberDaily = photoPerMemberDaily;
-        this.detailPerClientDaily = detailPerClientDaily;
+        this.detailPerMemberDaily = detailPerMemberDaily;
         this.clock = clock;
         transaction = new TransactionTemplate(manager);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -95,9 +95,8 @@ public class PlacesQuotaService {
         reserve(photo ? Kind.PHOTO : Kind.SEARCH, "member", Long.toString(memberId));
     }
 
-    public void reserveDetails(String clientIdentity) {
-        String identity = clientIdentity == null || clientIdentity.isBlank() ? "unknown" : clientIdentity;
-        reserve(Kind.DETAIL, "client", identity);
+    public void reserveDetails(long memberId) {
+        reserve(Kind.DETAIL, "member", Long.toString(memberId));
     }
 
     void reserve(boolean photo, String identity) {
@@ -128,21 +127,16 @@ public class PlacesQuotaService {
         PlacesQuotaBucket minuteBucket = buckets.findById(minuteKey)
                 .orElseGet(() -> new PlacesQuotaBucket(minuteKey));
         if (minuteBucket.count(minute) >= perMinute(kind)) {
-            String message = kind == Kind.DETAIL
-                    ? "클라이언트별 1분 호출 한도를 초과했습니다."
-                    : "회원별 1분 호출 한도를 초과했습니다.";
-            throw new BusinessException("PLACES_RATE_LIMITED", message, HttpStatus.TOO_MANY_REQUESTS);
+            throw new BusinessException("PLACES_RATE_LIMITED",
+                    "회원별 1분 호출 한도를 초과했습니다.", HttpStatus.TOO_MANY_REQUESTS);
         }
 
         String dayKey = prefix + "-day:" + identityHash;
         PlacesQuotaBucket identityDay = buckets.findById(dayKey)
                 .orElseGet(() -> new PlacesQuotaBucket(dayKey));
-        if (identityDay.count(today.toEpochDay()) >= perIdentityDaily(kind)) {
-            String code = kind == Kind.DETAIL ? "PLACES_CLIENT_DAILY_LIMITED" : "PLACES_MEMBER_DAILY_LIMITED";
-            String message = kind == Kind.DETAIL
-                    ? "클라이언트별 일일 호출 한도를 초과했습니다."
-                    : "회원별 일일 호출 한도를 초과했습니다.";
-            throw new BusinessException(code, message, HttpStatus.TOO_MANY_REQUESTS);
+        if (identityDay.count(today.toEpochDay()) >= perMemberDaily(kind)) {
+            throw new BusinessException("PLACES_MEMBER_DAILY_LIMITED",
+                    "회원별 일일 호출 한도를 초과했습니다.", HttpStatus.TOO_MANY_REQUESTS);
         }
 
         String monthKey = "month:" + YearMonth.from(today);
@@ -175,11 +169,11 @@ public class PlacesQuotaService {
         };
     }
 
-    private int perIdentityDaily(Kind kind) {
+    private int perMemberDaily(Kind kind) {
         return switch (kind) {
             case SEARCH -> searchPerMemberDaily;
             case PHOTO -> photoPerMemberDaily;
-            case DETAIL -> detailPerClientDaily;
+            case DETAIL -> detailPerMemberDaily;
         };
     }
 

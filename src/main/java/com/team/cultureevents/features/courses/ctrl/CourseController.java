@@ -113,7 +113,11 @@ public class CourseController {
     }
 
     @GetMapping("/shared/{shareId}")
-    public ResponseEntity<SharedCourseResponseDTO> shared(@PathVariable String shareId) {
+    public ResponseEntity<SharedCourseResponseDTO> shared(
+            @PathVariable String shareId,
+            HttpServletRequest request
+    ) {
+        currentMember.requireMember(request);
         return ResponseEntity.ok(courseService.getShared(shareId));
     }
 }

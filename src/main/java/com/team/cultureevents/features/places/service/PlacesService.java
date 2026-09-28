@@ -136,9 +136,9 @@ public class PlacesService {
     }
 
     /** 저장된 코스의 placeId를 최신 Google 장소 정보로 다시 조회한다. */
-    public PlaceCandidateDTO getDetails(String placeId, String clientIdentity) {
+    public PlaceCandidateDTO getDetails(String placeId, long memberId) {
         PlacesRequestValidator.placeId(placeId);
-        return placesClient.getDetails(placeId, clientIdentity);
+        return placesClient.getDetails(placeId, memberId);
     }
 
     /** 특정 사진 참조값을, 실제 화면에 띄울 수 있는 이미지 URL로 바꿔서 돌려준다. */

@@ -64,7 +64,8 @@ class PlacesControllerTest {
         for (String path : java.util.List.of(
                 "/api/places/nearby?latitude=37.5&longitude=127",
                 "/api/places/between?eventId1=a&eventId2=b&type=cafe",
-                "/api/places/photo?name=places/a/photos/b")) {
+                "/api/places/photo?name=places/a/photos/b",
+                "/api/places/details?placeId=p1")) {
             authMvc.perform(get(path))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
@@ -73,19 +74,13 @@ class PlacesControllerTest {
     }
 
     @Test
-    void placeDetailsRemainsPublicAndUsesClientAddressForQuota() throws Exception {
+    void placeDetailsUsesMemberForQuota() throws Exception {
         PlaceCandidateDTO detail = mock(PlaceCandidateDTO.class);
-        when(client.getDetails("p1", "203.0.113.10")).thenReturn(detail);
+        when(client.getDetails("p1", 1L)).thenReturn(detail);
 
-        mvc.perform(get("/api/places/details")
-                        .param("placeId", "p1")
-                        .with(request -> {
-                            request.setRemoteAddr("203.0.113.10");
-                            return request;
-                        }))
+        mvc.perform(get("/api/places/details").param("placeId", "p1"))
                 .andExpect(status().isOk());
 
-        verify(client).getDetails("p1", "203.0.113.10");
-        verifyNoInteractions(currentMember);
+        verify(client).getDetails("p1", 1L);
     }
 }
