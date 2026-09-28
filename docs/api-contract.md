@@ -399,10 +399,11 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 - 단순 이미지라면 `loading="lazy"`를 사용할 수 있고, 카드 컴포넌트에서 호출 시점을 직접 제어한다면
   `IntersectionObserver`로 화면 진입 시 `src`를 설정하는 방식을 권장합니다.
 - 페이지 이동이나 재렌더링으로 같은 사진 URL을 반복 요청하지 않도록 이미 받은 결과를 재사용하세요.
-- 사진 호출은 검색과 별도 한도를 사용하며 현재 기본 IP 제한은 **분당 40회**입니다. 카드 수가 많은 화면에서
-  eager loading을 하면 불필요하게 `429 PLACES_RATE_LIMITED`에 도달할 수 있습니다.
+- 사진 호출은 검색과 별도 한도를 사용하며 기본 제한은 같은 회원 기준 **분당 40회·하루 20회**입니다. 카드 수가
+  많은 화면에서 eager loading을 하면 불필요하게 `429`에 도달할 수 있습니다.
 
-**오류**: 형식이 틀리면 `400`, IP 한도 초과 `429`, 서버 전체 한도 초과·구글 실패·키 미설정은 `503`
+**오류**: 비로그인 `401`, 형식이 틀리면 `400`, 회원 한도 초과 `429`(`PLACES_RATE_LIMITED` /
+`PLACES_MEMBER_DAILY_LIMITED`), 서버 전체 한도 초과·구글 실패·키 미설정은 `503`
 (`PLACES_QUOTA_EXCEEDED` / `PLACES_UNAVAILABLE`)입니다.
 
 ## 11. 코스 저장 · 구현
