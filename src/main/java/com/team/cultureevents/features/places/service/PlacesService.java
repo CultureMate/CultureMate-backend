@@ -40,6 +40,9 @@ public class PlacesService {
     // 베이지안 가중평균(IMDB 방식)의 m값: 리뷰가 이 값보다 훨씬 많아야 자기 평점을 온전히 인정받는다.
     // 값을 올리면 "리뷰 많은 곳"을 더 우대하고, 낮추면 "평점 자체"를 더 신뢰한다. 정답은 없고 팀이 튜닝하는 값.
     static final double BAYESIAN_MIN_VOTES = 10.0;
+    static final double MIN_ALLOWED_DETOUR_METERS = 300;
+    static final double MAX_ALLOWED_DETOUR_METERS = 2000;
+    static final double MAX_DETOUR_PENALTY = 0.5;
 
     private final GooglePlacesClient placesClient;
     private final EventService eventService;
@@ -72,8 +75,8 @@ public class PlacesService {
 
     /**
      * 코스에서 연속된 두 행사(eventId1 -> eventId2) 사이 구간에 끼워 넣을 카페/음식점을 찾는다.
-     * 두 행사 좌표의 평균을 중심으로, 두 좌표 사이 실제 거리의 절반을 반경으로 검색한다.
-     * 카테고리(cafe 또는 restaurant) 하나당 최대 20개를 평점 기준으로 정렬해 전부 돌려주고,
+     * 두 행사 좌표의 평균을 중심으로, 두 좌표 사이 직선거리의 절반을 반경으로 검색한다.
+     * 카테고리(cafe 또는 restaurant) 하나당 최대 20개를 베이지안 평점과 우회거리로 정렬하고,
      * "5개씩 페이지로 넘겨보기"는 프론트가 이 배열 안에서 나눠서 처리한다(추가 호출 없음).
      *
      * @param type "cafe" 또는 "restaurant" (한 번에 하나의 카테고리만)
@@ -106,7 +109,28 @@ public class PlacesService {
         List<PlaceCandidateDTO> pool = placesClient.searchNearby(
                 centerLat, centerLng, List.of(type), radius, RESULT_LIMIT);
 
-        return filterAndSort(pool);
+        // Geographic estimates, not walking/driving route lengths.
+        double allowedDetour = Math.min(MAX_ALLOWED_DETOUR_METERS,
+                Math.max(MIN_ALLOWED_DETOUR_METERS, distanceMeters * 0.5));
+        List<PlaceCandidateDTO> eligible = filterAndSort(pool).stream()
+                .filter(p -> p.latitude() != null && p.longitude() != null
+                        && Double.isFinite(p.latitude()) && Double.isFinite(p.longitude())
+                        && p.latitude() >= 33 && p.latitude() <= 39
+                        && p.longitude() >= 124 && p.longitude() <= 132)
+                .map(p -> p.ranked(Math.max(0,
+                        haversineMeters(event1.latitude(), event1.longitude(), p.latitude(), p.longitude())
+                        + haversineMeters(p.latitude(), p.longitude(), event2.latitude(), event2.longitude())
+                        - distanceMeters), 0))
+                .filter(p -> p.detourMeters() <= allowedDetour)
+                .toList();
+        double average = eligible.stream().mapToDouble(PlaceCandidateDTO::rating).average().orElse(0);
+        return eligible.stream()
+                .map(p -> p.ranked(p.detourMeters(), bayesianScore(p.rating(), p.userRatingCount(), average)
+                        - MAX_DETOUR_PENALTY * p.detourMeters() / allowedDetour))
+                .sorted(Comparator.comparingDouble(PlaceCandidateDTO::recommendationScore).reversed()
+                        .thenComparingDouble(PlaceCandidateDTO::detourMeters)
+                        .thenComparing(PlaceCandidateDTO::placeId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .toList();
     }
 
     /** 특정 사진 참조값을, 실제 화면에 띄울 수 있는 이미지 URL로 바꿔서 돌려준다. */
@@ -139,7 +163,7 @@ public class PlacesService {
         PlacesRequestValidator.coordinates(latitude, longitude);
     }
 
-    /** 두 좌표 사이의 실제 거리(m)를 하버사인 공식으로 계산한다. */
+    /** 두 좌표 사이의 지표면상 직선거리(m)를 하버사인 공식으로 계산한다. */
     static double haversineMeters(double lat1, double lon1, double lat2, double lon2) {
         double earthRadiusMeters = 6_371_000;
         double dLat = Math.toRadians(lat2 - lat1);

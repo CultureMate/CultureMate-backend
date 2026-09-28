@@ -5,18 +5,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.places.domain.dto.PlaceCandidateDTO;
-import com.team.cultureevents.features.places.domain.entity.PlacesApiUsageEntity;
-import com.team.cultureevents.features.places.repository.PlacesApiUsageRepository;
+
+import com.team.cultureevents.features.places.service.PlacesQuotaService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.io.IOException;
-import java.time.LocalDate;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,16 +35,6 @@ public class GooglePlacesClient {
 
     static final String ENDPOINT = "https://places.googleapis.com/v1/places:searchNearby";
     private static final String PHOTO_BASE_URL = "https://places.googleapis.com/v1/";
-
-    // rating·userRatingCount를 요청하면 Enterprise 등급(무료 월 1,000건)으로 과금된다.
-    // 코스 만들기 흐름(구간마다 카페·음식점 각각 호출)이 도입되면서 검색 호출량이 늘어나서
-    // 기존 30보다 넉넉하게 잡았다. places_api_usage 테이블에 기록하므로 재시작해도 유지된다.
-    static final int DAILY_CALL_LIMIT = 80;
-
-    // Place Photo는 검색과 완전히 별도의 SKU(무료 월 1,000건, 별도 예산)라 한도도 따로 관리한다.
-    // 목록에 있는 후보 전부가 아니라, 실제로 자세히 보거나 코스에 추가하려는 것만 그때그때
-    // 부르는 걸 전제로 한 숫자다(프론트에서 리스트 썸네일용으로 전부 미리 부르면 이 한도를 빨리 씀).
-    static final int DAILY_PHOTO_LIMIT = 60;
 
     // 요청한 필드만큼만 과금되므로, 지금 쓰는 필드만 정확히 명시한다.
     // photos·businessStatus·currentOpeningHours는 전부 Pro/Enterprise 등급이라, 이미 rating
@@ -65,24 +55,22 @@ public class GooglePlacesClient {
     private final AppProperties props;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
-    private final PlacesApiUsageRepository usageRepository;
-
-    private final Object quotaLock = new Object();
+    private final PlacesQuotaService quotaService;
 
     @Autowired
     public GooglePlacesClient(AppProperties props, RestClient.Builder builder, ObjectMapper objectMapper,
-                              PlacesApiUsageRepository usageRepository) {
-        this(props, builder.build(), objectMapper, usageRepository);
+                              PlacesQuotaService quotaService) {
+        this(props, builder.build(), objectMapper, quotaService);
     }
 
     // 테스트에서 MockRestServiceServer로 이미 완성된 RestClient를 바로 넣을 수 있게 하는 생성자.
     // 생성자가 둘이라 스프링이 자동 주입 대상을 못 고르므로, 반드시 위 생성자에 @Autowired를 붙여야 한다.
     GooglePlacesClient(AppProperties props, RestClient restClient, ObjectMapper objectMapper,
-                       PlacesApiUsageRepository usageRepository) {
+                       PlacesQuotaService quotaService) {
         this.props = props;
         this.restClient = restClient;
         this.objectMapper = objectMapper;
-        this.usageRepository = usageRepository;
+        this.quotaService = quotaService;
     }
 
     /**
@@ -105,7 +93,7 @@ public class GooglePlacesClient {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
         }
 
-        checkAndIncrementDailyQuota();
+        quotaService.reserve(false);
 
         Map<String, Object> body = Map.of(
                 "includedTypes", includedTypes,
@@ -152,7 +140,7 @@ public class GooglePlacesClient {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
         }
 
-        checkAndIncrementDailyPhotoQuota();
+        quotaService.reserve(true);
 
         // skipHttpRedirect=true로 요청하면 구글이 이미지 대신 photoUri가 담긴 JSON을 돌려준다.
         // 이 photoUri는 API 키가 안 들어있는 순수 CDN 링크라, 프론트에 그대로 넘겨도 안전하다.
@@ -194,14 +182,17 @@ public class GooglePlacesClient {
             List<PlaceCandidateDTO> result = new ArrayList<>();
             for (JsonNode p : places) {
                 String photoName = null;
-                String photoAttribution = null;
+                List<PlaceCandidateDTO.AuthorAttribution> photoAttributions = new ArrayList<>();
                 JsonNode photos = p.get("photos");
                 if (photos != null && photos.isArray() && !photos.isEmpty()) {
                     JsonNode firstPhoto = photos.get(0);
                     photoName = textOrNull(firstPhoto, "name");
                     JsonNode attributions = firstPhoto.get("authorAttributions");
                     if (attributions != null && attributions.isArray() && !attributions.isEmpty()) {
-                        photoAttribution = textOrNull(attributions.get(0), "displayName");
+                        for (JsonNode author : attributions) {
+                            photoAttributions.add(new PlaceCandidateDTO.AuthorAttribution(
+                                    textOrNull(author, "displayName"), textOrNull(author, "uri"), textOrNull(author, "photoUri")));
+                        }
                     }
                 }
                 Boolean openNow = p.path("currentOpeningHours").hasNonNull("openNow")
@@ -217,44 +208,14 @@ public class GooglePlacesClient {
                         p.path("location").hasNonNull("longitude") ? p.path("location").get("longitude").asDouble() : null,
                         textOrNull(p, "googleMapsUri"),
                         photoName,
-                        photoAttribution,
+                        photoAttributions,
                         textOrNull(p, "businessStatus"),
-                        openNow
+                        openNow, null, null
                 ));
             }
             return result;
         } catch (IOException e) {
             throw unavailable("Google Places 응답 파싱에 실패했습니다.");
-        }
-    }
-
-    /** 하루가 바뀌면 새 행을 만들고, 오늘 검색 호출 수가 한도를 넘으면 실제 호출 전에 막는다. */
-    @Transactional
-    void checkAndIncrementDailyQuota() {
-        synchronized (quotaLock) {
-            LocalDate today = LocalDate.now();
-            PlacesApiUsageEntity usage = usageRepository.findById(today)
-                    .orElseGet(() -> new PlacesApiUsageEntity(today, 0, 0));
-            if (usage.getCallCount() >= DAILY_CALL_LIMIT) {
-                throw quotaExceeded("오늘 Google Places 호출 한도(" + DAILY_CALL_LIMIT + "건)를 다 썼습니다.");
-            }
-            usage.incrementCallCount();
-            usageRepository.save(usage);
-        }
-    }
-
-    /** 검색과는 별도 예산(SKU)이라, 사진 호출 수는 같은 행의 다른 컬럼에 따로 센다. */
-    @Transactional
-    void checkAndIncrementDailyPhotoQuota() {
-        synchronized (quotaLock) {
-            LocalDate today = LocalDate.now();
-            PlacesApiUsageEntity usage = usageRepository.findById(today)
-                    .orElseGet(() -> new PlacesApiUsageEntity(today, 0, 0));
-            if (usage.getPhotoCallCount() >= DAILY_PHOTO_LIMIT) {
-                throw quotaExceeded("오늘 Google Places 사진 호출 한도(" + DAILY_PHOTO_LIMIT + "건)를 다 썼습니다.");
-            }
-            usage.incrementPhotoCallCount();
-            usageRepository.save(usage);
         }
     }
 
@@ -266,7 +227,4 @@ public class GooglePlacesClient {
         return new BusinessException("PLACES_UNAVAILABLE", message, HttpStatus.SERVICE_UNAVAILABLE);
     }
 
-    private static BusinessException quotaExceeded(String message) {
-        return new BusinessException("PLACES_QUOTA_EXCEEDED", message, HttpStatus.SERVICE_UNAVAILABLE);
-    }
 }

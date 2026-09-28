@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.time.LocalDate;
 
 public interface PlacesApiUsageRepository extends JpaRepository<PlacesApiUsageEntity, LocalDate> {
+    java.util.List<PlacesApiUsageEntity> findByCallDateBetween(LocalDate start, LocalDate end);
 }

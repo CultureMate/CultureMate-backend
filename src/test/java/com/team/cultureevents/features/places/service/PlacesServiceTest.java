@@ -22,6 +22,43 @@ import static org.mockito.Mockito.when;
 
 class PlacesServiceTest {
 
+    @Test
+    void betweenBalancesQualityAndDetourAndExcludesDistantCandidates() {
+        when(eventService.getDetail("a")).thenReturn(eventAt("a", 37.5, 127.0));
+        when(eventService.getDetail("b")).thenReturn(eventAt("b", 37.5, 127.02));
+        PlaceCandidateDTO onRoute = located("on", 3.5, 37.5, 127.01);
+        PlaceCandidateDTO better = located("better", 4.9, 37.503, 127.01);
+        PlaceCandidateDTO equalFarther = located("farther", 4.9, 37.506, 127.01);
+        PlaceCandidateDTO excluded = located("excluded", 5.0, 37.6, 127.01);
+        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20)))
+                .thenReturn(List.of(onRoute, equalFarther, excluded, better));
+        var result = service.recommendBetweenEvents("a", "b", "cafe");
+        assertEquals(List.of("better", "farther", "on"), result.stream().map(PlaceCandidateDTO::name).toList());
+        double direct = PlacesService.haversineMeters(37.5, 127, 37.5, 127.02);
+        for (var p : result) {
+            double expected = Math.max(0, PlacesService.haversineMeters(37.5, 127, p.latitude(), p.longitude())
+                    + PlacesService.haversineMeters(p.latitude(), p.longitude(), 37.5, 127.02) - direct);
+            assertEquals(expected, p.detourMeters(), 0.001);
+            assertTrue(p.detourMeters() <= Math.min(2000, Math.max(300, direct * 0.5)));
+        }
+    }
+
+    @Test
+    void coincidentEventsHaveFiniteScoresAnd300MeterDetourCap() {
+        when(eventService.getDetail("a")).thenReturn(eventAt("a", 37.5, 127));
+        when(eventService.getDetail("b")).thenReturn(eventAt("b", 37.5, 127));
+        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20)))
+                .thenReturn(List.of(located("near", 4.5, 37.5001, 127), located("far", 5, 37.51, 127)));
+        var result = service.recommendBetweenEvents("a", "b", "cafe");
+        assertEquals(1, result.size());
+        assertTrue(result.get(0).detourMeters() <= 300);
+        assertTrue(Double.isFinite(result.get(0).recommendationScore()));
+    }
+
+    private static PlaceCandidateDTO located(String name, double rating, double lat, double lng) {
+        return new PlaceCandidateDTO(name, name, "address", rating, 100, lat, lng, "url", null, null, "OPERATIONAL", true);
+    }
+
     private final GooglePlacesClient placesClient = mock(GooglePlacesClient.class);
     private final EventService eventService = mock(EventService.class);
     private final PlacesService service = new PlacesService(placesClient, eventService);
