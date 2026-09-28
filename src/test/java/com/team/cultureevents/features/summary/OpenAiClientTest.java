@@ -79,6 +79,6 @@ class OpenAiClientTest {
     }
 
     private static AppProperties props(String key) {
-        return new AppProperties(null, null, new AppProperties.Openai(key, "gpt-test"), null, null);
+        return new AppProperties(null, null, new AppProperties.Openai(key, "gpt-test"), null, null, null);
     }
 }

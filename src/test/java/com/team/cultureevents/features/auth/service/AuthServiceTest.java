@@ -23,7 +23,7 @@ class AuthServiceTest {
     private final AuthSessionRepository sessions = mock(AuthSessionRepository.class);
     private final AppProperties props = new AppProperties(null, null, null,
             new AppProperties.Kakao("test-rest-key", "", "http://localhost:8080/api/auth/kakao/callback"),
-            "http://localhost:5175");
+            null, "http://localhost:5175");
     private final AuthService auth = new AuthService(props, kakao, members, sessions);
 
     @Test

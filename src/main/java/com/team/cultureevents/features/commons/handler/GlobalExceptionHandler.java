@@ -8,6 +8,12 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler({org.springframework.web.bind.MissingServletRequestParameterException.class,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class})
+    public ResponseEntity<ApiError> handleRequestParameter(Exception ex) {
+        return ResponseEntity.badRequest().body(new ApiError("INVALID_PARAM", "필수 파라미터가 없거나 형식이 올바르지 않습니다."));
+    }
+
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<ApiError> handleBusiness(BusinessException ex) {
         return ResponseEntity.status(ex.getStatus())

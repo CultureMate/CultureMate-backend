@@ -14,7 +14,7 @@
 
 | code | HTTP | 의미 |
 |------|------|------|
-| `INVALID_PARAM` | 400 | 날짜·페이지·필수값 |
+| `INVALID_PARAM` | 400 | 날짜·페이지·필수값, 파라미터 누락·형식 오류(숫자 변환 실패 포함) |
 | `UNAUTHORIZED` | 401 | 세션 없음/만료 |
 | `FORBIDDEN` | 403 | 본인 댓글이 아님 |
 | `NOT_FOUND` | 404 | 행사 또는 찜 없음 |
@@ -22,6 +22,11 @@
 | `UPSTREAM_UNAVAILABLE` | 502 | 서울시 API 실패 |
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
 | `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
+| `PLACES_UNAVAILABLE` | 503 | Google Places 조회 실패(키 미설정 포함) |
+| `PLACES_RATE_LIMITED` | 429 | 같은 회원의 Places 1분 호출 한도 초과(기본 검색 20회·사진 40회). 약 1분 뒤 재시도 |
+| `PLACES_MEMBER_DAILY_LIMITED` | 429 | 같은 회원의 Places 일일 호출 한도 초과(기본 검색·사진 각 20회) |
+| `PLACES_QUOTA_EXCEEDED` | 503 | 서버 전체 Places 일일(검색 80·사진 60) 또는 월간(검색·사진 각 900) 한도 초과 |
+| `PLACES_QUOTA_BUSY` | 503 | 호출량 기록 충돌이 반복되어 처리하지 못함. 잠시 후 재시도 |
 
 ## 1. 헬스 · 완료
 
@@ -76,7 +81,7 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 ### `GET /api/events/detail?eventId={encoded}`
 
 목록 필드 + `fee`, `organization`, `originalUrl`, `viewCount`(없으면 `0`), `summary`(아직 생성 전이면 `null`).  
-`summary`는 `POST /api/events/summary`로 이미 생성된 소개문이 있을 때만 채워지며, 이 API 자체는 새로 생성하지 않음.
+`summary`는 `POST /api/events/summary`로 이미 생성된 소개문이 있을 때만 채워지며, 이 API 자체는 새로 생성하지 않습니다.  
 슬래시 없는 ID만 `GET /api/events/{eventId}` 가능. URL형 ID는 반드시 query.
 
 ## 3. 카카오 로그인 · 서버 완료
@@ -181,9 +186,199 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 각 항목: `eventId`, `title`, `category`, `district`, `place`, `startDate`, `endDate`, `imageUrl`, `viewCount`, `dDay`(한국 날짜 기준, 시작일 없으면 `null`).
 
-## 10. 아직 없음
+## 10. 장소 추천(Google Places) · 구현
 
-Google Places.
+행사 좌표 근처(또는 코스의 연속된 두 행사 사이)의 식당·카페 후보를 추천합니다. "코스"는 프론트가
+로컬에서 관리하므로 서버는 결과를 저장하지 않고 매 호출마다 Google Places에서 조회만 합니다
+(구글 약관상 이름·주소·평점·사진은 캐싱 금지). "다시 추천"과 "5개씩 페이지 넘기기"는 새로 호출하지
+않고, 한 번에 받은 배열 안에서 프론트가 나눠 보여주는 방식을 전제로 합니다.
+
+**중요**: Google Places Nearby Search(New)는 페이지네이션이 없어 한 번에 최대 20개까지만 받을 수
+있습니다. 같은 좌표·조건으로 다시 호출해도 "다음 20개"가 오지 않고 사실상 같은 결과가 다시 옵니다.
+"최대 20곳까지만 추천"이라는 점을 UI에 안내해야 합니다. 근처에 후보가 없거나, 있어도 전부 평점·리뷰
+기준(평가 5개 이상)을 못 채우면 빈 배열 `[]`이며 에러가 아닙니다.
+
+### 공통 규칙
+
+세 API 모두 로그인 세션 쿠키가 필요하며, 없거나 만료되면 `401 UNAUTHORIZED`입니다.
+
+**요청값 검증**: 아래 조건에 어긋나면 Google 호출과 호출량 차감 없이 `400 INVALID_PARAM`입니다.
+필수 파라미터를 빼거나 숫자 자리에 글자를 넣은 경우도 `400 INVALID_PARAM`입니다.
+
+| 값 | 조건 |
+|----|------|
+| `latitude`, `longitude` | NaN·무한대 불가, 국내 범위(위도 33~39, 경도 124~132) |
+| `radius` | 1~50000(m) |
+| `types` | Google Place Types **Table A**의 정확한 소문자 이름(공백 없이), 최대 50개. `food`·`establishment` 같은 Table B 값은 거절 |
+| `/between`의 `type` | `cafe` 또는 `restaurant`(소문자) 하나 |
+| `/photo`의 `name` | `places/{placeId}/photos/{photoId}` 형식. 식별자는 영문·숫자·`_`·`-`만. 쿼리·추가 경로·URL은 거절 |
+
+**호출 제한**
+
+| 구분 | 검색(`nearby` + `between` 합산) | 사진(`photo`) | 초과 시 |
+|------|------:|------:|------|
+| 같은 회원, 1분 | 20회 | 40회 | `429 PLACES_RATE_LIMITED` |
+| 같은 회원, 하루 | 20회 | 20회 | `429 PLACES_MEMBER_DAILY_LIMITED` |
+| 서버 전체, 하루 | 80회 | 60회 | `503 PLACES_QUOTA_EXCEEDED` |
+| 서버 전체, 한 달 | 900회 | 900회 | `503 PLACES_QUOTA_EXCEEDED` |
+
+- 실제로 Google에 요청이 나가는 호출만 셉니다. 검증에 실패한 요청은 세지 않고, 한도에 걸린 요청은
+  어떤 카운트도 차감하지 않습니다.
+- 제한 기준은 로그인 회원 ID입니다. Docker/Nginx 뒤에서도 회원마다 별도로 집계되며, 1분 제한은 정각 분
+  단위 고정 구간입니다.
+- 하루·한 달 경계는 미국 태평양 시간 기준입니다(구글 무료 사용량 갱신 시점). 한국 시간으로는 하루가
+  오후 4~5시경(서머타임 여부에 따라)에 바뀝니다.
+- `PLACES_RATE_LIMITED`는 약 1분 뒤에, `PLACES_MEMBER_DAILY_LIMITED`는 다음 날에 풀립니다.
+  `503 PLACES_QUOTA_EXCEEDED`는 서버 전체 기준이라 다음 날 또는 다음 달에 풀립니다.
+- 월간·분당·회원별 일일 값은 환경변수(`PLACES_SEARCH_MONTHLY_LIMIT`, `PLACES_PHOTO_MONTHLY_LIMIT`,
+  `PLACES_SEARCH_PER_MINUTE`, `PLACES_PHOTO_PER_MINUTE`, `PLACES_SEARCH_PER_MEMBER_DAILY`,
+  `PLACES_PHOTO_PER_MEMBER_DAILY`)로 바꿀 수 있고, 서버 전체 하루 한도(80·60)는 코드 상수입니다.
+- 코스 하나(행사 N개)를 채우면 검색 호출이 `(N-1) * 2`번 나갑니다(구간마다 카페·음식점 각 1회).
+
+**Google Places 언어/지역 설정**
+
+- Nearby Search 요청에는 `languageCode: "ko"`, `regionCode: "KR"`을 넣습니다.
+- 장소명과 주소를 한국어/대한민국 기준으로 우선 받기 위한 설정입니다. 다만 Google 원천 데이터 자체에
+  번역이 없거나 상호에 외국어가 포함된 경우 일부 외국어가 남을 수 있습니다.
+
+**응답 필드(`nearby`, `between` 공통)**
+
+| 필드 | 의미 |
+|------|------|
+| `placeId`, `name`, `address` | 구글 장소 ID, 이름, 주소 |
+| `rating`, `userRatingCount` | 평점, 평가 참여 수(구글은 평점 수와 리뷰 수를 따로 주지 않음) |
+| `latitude`, `longitude`, `mapUrl` | 좌표, 구글맵 링크 |
+| `photoName` | 첫 번째 사진의 참조값. 사진이 없으면 `null`. `/photo`에 그대로 넘김 |
+| `authorAttributions` | 그 사진의 저작자 **전체** 배열 `{ displayName, uri, photoUri }`. 출처가 없으면 `[]`, 개별 필드가 없으면 `null` |
+| `businessStatus` | 영업 상태(`OPERATIONAL` 등). 영구 폐업·장기 휴업은 애초에 제외되어 내려오지 않음 |
+| `openNow` | 지금 영업 중인지. 영업시간 정보가 없으면 `null`(모름, 폐업 아님) |
+| `detourMeters`, `recommendationScore` | `between`에서만 채워짐(우회 거리 m, 최종 추천 점수). `nearby`는 `null` |
+
+사진 옆에는 `authorAttributions` 배열의 **모든 저작자**를 표시해야 합니다(구글 약관상 필수).
+Google Places 결과는 목록으로 표시하고 `mapUrl`로 Google Maps를 여는 방식으로 사용합니다. 카카오맵에는
+Google Places의 장소·좌표를 마커로 표시하지 않습니다.
+
+### `GET /api/places/nearby`
+
+행사 상세 페이지 보강 등, 좌표 하나로 검색할 때 사용합니다.
+
+| 파라미터 | 필수 | 의미 |
+|----------|------|------|
+| `latitude` | O | 중심 좌표 위도 |
+| `longitude` | O | 중심 좌표 경도 |
+| `types` | X | 콤마로 구분된 Google Place 타입. 생략하면 `restaurant,cafe` |
+| `radius` | X | 검색 반경(m). 생략하면 500 |
+| `maxResults` | X | 최대 후보 수. 생략하면 5, 1~20 밖의 값은 그 범위로 보정 |
+
+```
+GET /api/places/nearby?latitude=37.5125&longitude=127.0269&types=restaurant,cafe&radius=500&maxResults=5
+```
+
+```json
+[
+  {
+    "placeId": "ChIJ...",
+    "name": "스페이스 카페",
+    "address": "서울 강남구 ...",
+    "rating": 4.3,
+    "userRatingCount": 128,
+    "latitude": 37.5127,
+    "longitude": 127.0271,
+    "mapUrl": "https://maps.google.com/?cid=...",
+    "photoName": "places/ChIJ.../photos/AeI...",
+    "authorAttributions": [
+      { "displayName": "홍길동", "uri": "https://maps.google.com/maps/contrib/...", "photoUri": "https://lh3.googleusercontent.com/..." },
+      { "displayName": "김철수", "uri": "https://maps.google.com/maps/contrib/...", "photoUri": "https://lh3.googleusercontent.com/..." }
+    ],
+    "businessStatus": "OPERATIONAL",
+    "openNow": true,
+    "detourMeters": null,
+    "recommendationScore": null
+  }
+]
+```
+
+정렬은 평점·평가 수를 합친 베이지안 점수 순입니다. 구글 Nearby Search에는 평점순 옵션이 없어 항상 20개를
+받아 서버에서 직접 정렬한 뒤 `maxResults`개만 돌려줍니다. 평점이 없거나 평가 5개 미만, 영구 폐업·장기 휴업
+장소는 제외합니다(단, 구글 데이터도 100% 실시간은 아니라 "가보니 폐업"을 완전히 막아주진 못하니 `openNow`를
+UI에 같이 안내하세요).
+
+### `GET /api/places/between`
+
+코스에서 **연속된 두 행사 사이** 구간에 끼워 넣을 카페/음식점을 찾을 때 사용합니다. 두 행사 좌표의
+평균을 중심으로, 둘 사이 직선거리(하버사인)의 절반을 반경으로 검색합니다(반경은 100m~50km로 보정).
+카테고리 하나당 최대 20개를 순위대로 전부 돌려주며, 응답 형식은 `nearby`와 같습니다.
+
+| 파라미터 | 필수 | 의미 |
+|----------|------|------|
+| `eventId1` | O | 코스에서 앞에 오는 행사 ID |
+| `eventId2` | O | 코스에서 뒤에 오는 행사 ID |
+| `type` | O | `cafe` 또는 `restaurant` (한 번에 하나만) |
+
+```
+GET /api/places/between?eventId1=...&eventId2=...&type=cafe
+GET /api/places/between?eventId1=...&eventId2=...&type=restaurant
+```
+
+행사 N개짜리 코스 전체를 채우려면 연속된 쌍마다(행사1-행사2, 행사2-행사3, ...) 이 API를 `cafe`,
+`restaurant`로 각각 호출합니다(총 `(N-1) * 2`번). 없는 행사는 `404 NOT_FOUND`, 두 행사 중 하나라도 좌표가
+없거나 범위를 벗어나면 `400`입니다.
+
+**추천 순위 계산**
+
+1. 평점이 없거나 평가 수 5개 미만, 영구 폐업·장기 휴업, 좌표가 없거나 유효하지 않은 후보를 제외합니다.
+2. 후보마다 **우회 거리** `D = max(0, 거리(행사1, 후보) + 거리(후보, 행사2) - 거리(행사1, 행사2))`를 구합니다.
+3. **허용 우회 거리** `L = min(2000m, max(300m, 행사 간 직선거리 × 0.5))`를 넘는 후보를 제외합니다.
+   (행사가 같은 곳이어도 최소 300m가 적용되어 0으로 나누지 않습니다. 행사 간 거리가 약 4.8km 이하면 검색
+   범위 안의 후보는 모두 통과하고, 그보다 긴 구간에서만 실제로 잘립니다.)
+4. 남은 후보의 평균 평점을 `C`, 후보의 평점을 `R`, 평가 수를 `v`라 하면
+   `B = (v × R + 10 × C) / (v + 10)`(평가가 적을수록 평균 쪽으로 보정), **최종 점수 = `B - 0.5 × (D / L)`**.
+   우회 때문에 깎이는 점수는 최대 0.5점이라 품질(평점·평가 수)이 순위를 좌우하되, 비슷한 품질이면 덜 돌아가는
+   곳이 앞섭니다.
+5. 점수 내림차순으로 정렬하고, 점수가 같으면 우회 거리, 그다음 `placeId` 순입니다.
+
+예: `L = 1000m`일 때 후보 A(B 4.5, 우회 100m) → 4.45, 후보 B(B 4.8, 우회 400m) → 4.60,
+후보 C(B 4.5, 우회 600m) → 4.20. 순서는 B → A → C입니다.
+
+거리는 지표면상 **직선거리**의 추정값이라 실제 도보·차량 경로의 거리나 이동 시간이 아닙니다(강·다리·출입구
+등은 반영하지 않음). `detourMeters`는 반올림하지 않은 소수 m이므로 화면에 보여줄 땐 반올림하세요.
+
+### `GET /api/places/photo`
+
+`photoName`을 실제로 화면에 띄울 수 있는 이미지로 바꿉니다. **후보 전체가 아니라 실제로 보여줄 사진에
+대해서만** 호출해야 합니다(검색과 별도 과금 SKU, 하루 60건 별도 한도). 목록의 카드 전부에 썸네일을 미리
+깔지 말고, 사용자가 실제로 자세히 보거나 코스에 추가하려는 곳만 그때그때 불러오세요.
+
+| 파라미터 | 필수 | 의미 |
+|----------|------|------|
+| `name` | O | 검색 응답의 `photoName` 값 그대로 |
+| `maxWidthPx` | X | 원하는 이미지 최대 가로 픽셀. 생략하면 400, 1~1600 밖의 값은 그 범위로 보정 |
+
+```
+GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
+```
+
+응답은 이미지 자체가 아니라 **302 리다이렉트**(구글 CDN 링크로)입니다. 프론트에서 그냥
+`<img src="/api/places/photo?name=...">`로 쓰면 되고, API 키는 서버 밖으로 나가지 않습니다.
+같은 이미지를 다시 그릴 때마다 호출이 나가면 사진 한도와 회원별 제한을 빨리 쓰니, 한 번 받은 이미지는
+프론트에서 재사용하세요.
+
+**프론트 구현 주의 — 사진은 lazy loading 하세요.**
+
+- 카드 목록을 받았다고 모든 `photoName`을 즉시 `/api/places/photo`로 요청하지 않습니다.
+- 현재 화면(viewport)에 들어온 카드의 사진만 요청하고, 아직 보이지 않는 카드는 스크롤되어 보일 때 요청합니다.
+- 단순 이미지라면 `loading="lazy"`를 사용할 수 있고, 카드 컴포넌트에서 호출 시점을 직접 제어한다면
+  `IntersectionObserver`로 화면 진입 시 `src`를 설정하는 방식을 권장합니다.
+- 페이지 이동이나 재렌더링으로 같은 사진 URL을 반복 요청하지 않도록 이미 받은 결과를 재사용하세요.
+- 사진 호출은 검색과 별도 한도를 사용하며 현재 기본 IP 제한은 **분당 40회**입니다. 카드 수가 많은 화면에서
+  eager loading을 하면 불필요하게 `429 PLACES_RATE_LIMITED`에 도달할 수 있습니다.
+
+**오류**: 형식이 틀리면 `400`, IP 한도 초과 `429`, 서버 전체 한도 초과·구글 실패·키 미설정은 `503`
+(`PLACES_QUOTA_EXCEEDED` / `PLACES_UNAVAILABLE`)입니다.
+
+## 11. 아직 없음
+
+마이페이지 수정·탈퇴, 상세 보완(댓글 외), 코스 저장(FR-14).
 
 ## 로컬 확인
 
