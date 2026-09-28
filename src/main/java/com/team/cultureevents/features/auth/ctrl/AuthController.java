@@ -8,6 +8,7 @@ import com.team.cultureevents.features.auth.service.CurrentMemberService;
 import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.favorites.repository.FavoriteRepository;
+import com.team.cultureevents.features.courses.service.CourseService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -41,15 +42,18 @@ public class AuthController {
     private final MemberRepository members;
     private final AuthSessionRepository sessions;
     private final FavoriteRepository favorites;
+    private final CourseService courses;
 
     public AuthController(AuthService auth, CurrentMemberService currentMember, AppProperties properties,
-                           MemberRepository members, AuthSessionRepository sessions, FavoriteRepository favorites) {
+                           MemberRepository members, AuthSessionRepository sessions, FavoriteRepository favorites,
+                           CourseService courses) {
         this.auth = auth;
         this.currentMember = currentMember;
         this.properties = properties;
         this.members = members;
         this.sessions = sessions;
         this.favorites = favorites;
+        this.courses = courses;
     }
 
     @GetMapping("/kakao/start")
@@ -125,6 +129,7 @@ public class AuthController {
 
         sessions.deleteByMember_MemberId(member.getMemberId());
         favorites.deleteByMemberId(member.getMemberId());
+        courses.deleteAllByMemberId(member.getMemberId());
         members.delete(member);
 
         return ResponseEntity.noContent()

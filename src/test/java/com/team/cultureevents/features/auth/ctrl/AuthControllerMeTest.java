@@ -9,6 +9,7 @@ import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.commons.handler.GlobalExceptionHandler;
 import com.team.cultureevents.features.favorites.repository.FavoriteRepository;
+import com.team.cultureevents.features.courses.service.CourseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -36,12 +37,13 @@ class AuthControllerMeTest {
     private final MemberRepository members = mock(MemberRepository.class);
     private final AuthSessionRepository sessions = mock(AuthSessionRepository.class);
     private final FavoriteRepository favorites = mock(FavoriteRepository.class);
+    private final CourseService courses = mock(CourseService.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         AuthController controller = new AuthController(
-                mock(AuthService.class), currentMember, mock(AppProperties.class), members, sessions, favorites);
+                mock(AuthService.class), currentMember, mock(AppProperties.class), members, sessions, favorites, courses);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -128,6 +130,7 @@ class AuthControllerMeTest {
 
         verify(sessions).deleteByMember_MemberId(7L);
         verify(favorites).deleteByMemberId(7L);
+        verify(courses).deleteAllByMemberId(7L);
         verify(members).delete(member);
     }
 
