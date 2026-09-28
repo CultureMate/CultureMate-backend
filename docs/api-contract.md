@@ -259,6 +259,7 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 | `authorAttributions` | 그 사진의 저작자 **전체** 배열 `{ displayName, uri, photoUri }`. 출처가 없으면 `[]`, 개별 필드가 없으면 `null` |
 | `businessStatus` | 영업 상태(`OPERATIONAL` 등). 영구 폐업·장기 휴업은 애초에 제외되어 내려오지 않음 |
 | `openNow` | 지금 영업 중인지. 영업시간 정보가 없으면 `null`(모름, 폐업 아님) |
+| `openingHours` | 요일별 정규 영업시간 문자열 배열. Google의 `regularOpeningHours.weekdayDescriptions`를 한국어로 전달하며, 정보가 없으면 `[]` |
 | `detourMeters`, `recommendationScore` | `between`에서만 채워짐(우회 거리 m, 최종 추천 점수). `nearby`는 `null` |
 
 사진 옆에는 `authorAttributions` 배열의 **모든 저작자**를 표시해야 합니다(구글 약관상 필수).
@@ -299,6 +300,11 @@ GET /api/places/nearby?latitude=37.5125&longitude=127.0269&types=restaurant,cafe
     ],
     "businessStatus": "OPERATIONAL",
     "openNow": true,
+    "openingHours": [
+      "월요일: 오전 10:00~오후 10:00",
+      "화요일: 오전 10:00~오후 10:00",
+      "수요일: 휴무"
+    ],
     "detourMeters": null,
     "recommendationScore": null
   }
