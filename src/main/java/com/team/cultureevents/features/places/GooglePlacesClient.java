@@ -98,6 +98,8 @@ public class GooglePlacesClient {
     public List<PlaceCandidateDTO> searchNearby(double latitude, double longitude,
                                                  List<String> includedTypes,
                                                  int radiusMeters, int maxResults) {
+        PlacesRequestValidator.nearby(latitude, longitude, includedTypes, radiusMeters);
+        if (maxResults < 1 || maxResults > 20) throw BusinessException.badRequest("maxResults는 1~20이어야 합니다.");
         String key = props.places().key();
         if (key == null || key.isBlank()) {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
@@ -143,6 +145,8 @@ public class GooglePlacesClient {
      * @return 브라우저가 바로 로드할 수 있는 이미지 URL(구글 CDN, API 키 안 들어있음)
      */
     public String resolvePhotoUri(String photoName, int maxWidthPx) {
+        PlacesRequestValidator.photo(photoName);
+        if (maxWidthPx < 1 || maxWidthPx > 1600) throw BusinessException.badRequest("maxWidthPx는 1~1600이어야 합니다.");
         String key = props.places().key();
         if (key == null || key.isBlank()) {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");

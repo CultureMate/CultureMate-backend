@@ -4,6 +4,7 @@ import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.events.domain.dto.EventDetailResponseDTO;
 import com.team.cultureevents.features.events.service.EventService;
 import com.team.cultureevents.features.places.GooglePlacesClient;
+import com.team.cultureevents.features.places.PlacesRequestValidator;
 import com.team.cultureevents.features.places.domain.dto.PlaceCandidateDTO;
 import org.springframework.stereotype.Service;
 
@@ -58,6 +59,7 @@ public class PlacesService {
 
         List<String> resolvedTypes = (types == null || types.isEmpty()) ? DEFAULT_TYPES : types;
         int resolvedRadius = radiusMeters == null ? DEFAULT_RADIUS_METERS : radiusMeters;
+        PlacesRequestValidator.nearby(latitude, longitude, resolvedTypes, resolvedRadius);
         int resolvedMax = maxResults == null
                 ? DEFAULT_MAX_RESULTS
                 : Math.min(Math.max(maxResults, 1), RESULT_LIMIT);
@@ -80,8 +82,8 @@ public class PlacesService {
         if (eventId1 == null || eventId1.isBlank() || eventId2 == null || eventId2.isBlank()) {
             throw BusinessException.badRequest("eventId1, eventId2가 필요합니다.");
         }
-        if (type == null || type.isBlank()) {
-            throw BusinessException.badRequest("type이 필요합니다.");
+        if (type == null || !DEFAULT_TYPES.contains(type)) {
+            throw BusinessException.badRequest("type은 cafe 또는 restaurant이어야 합니다.");
         }
 
         EventDetailResponseDTO event1 = eventService.getDetail(eventId1);
@@ -92,6 +94,8 @@ public class PlacesService {
             throw BusinessException.badRequest("좌표 정보가 없는 행사가 포함되어 있습니다.");
         }
 
+        validateKoreaBounds(event1.latitude(), event1.longitude());
+        validateKoreaBounds(event2.latitude(), event2.longitude());
         double centerLat = (event1.latitude() + event2.latitude()) / 2;
         double centerLng = (event1.longitude() + event2.longitude()) / 2;
         double distanceMeters = haversineMeters(event1.latitude(), event1.longitude(),
@@ -107,9 +111,7 @@ public class PlacesService {
 
     /** 특정 사진 참조값을, 실제 화면에 띄울 수 있는 이미지 URL로 바꿔서 돌려준다. */
     public String resolvePhotoUri(String photoName, Integer maxWidthPx) {
-        if (photoName == null || photoName.isBlank()) {
-            throw BusinessException.badRequest("name이 필요합니다.");
-        }
+        PlacesRequestValidator.photo(photoName);
         int resolvedWidth = maxWidthPx == null ? 400 : Math.min(Math.max(maxWidthPx, 1), 1600);
         return placesClient.resolvePhotoUri(photoName, resolvedWidth);
     }
@@ -134,9 +136,7 @@ public class PlacesService {
     }
 
     private static void validateKoreaBounds(double latitude, double longitude) {
-        if (latitude < 33 || latitude > 39 || longitude < 124 || longitude > 132) {
-            throw BusinessException.badRequest("좌표가 서울 범위를 벗어났습니다.");
-        }
+        PlacesRequestValidator.coordinates(latitude, longitude);
     }
 
     /** 두 좌표 사이의 실제 거리(m)를 하버사인 공식으로 계산한다. */
