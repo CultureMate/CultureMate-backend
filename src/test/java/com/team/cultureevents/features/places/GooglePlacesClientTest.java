@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -59,6 +60,7 @@ class GooglePlacesClientTest {
             "rating":4.5,"userRatingCount":100,"location":{"latitude":37.5,"longitude":127.0},
             "googleMapsUri":"https://maps.google.com/?cid=1","businessStatus":"OPERATIONAL",
             "currentOpeningHours":{"openNow":true},
+            "regularOpeningHours":{"weekdayDescriptions":["월요일: 오전 10:00~오후 10:00","화요일: 오전 10:00~오후 10:00","수요일: 휴무"]},
             "photos":[{"name":"places/p1/photos/abc","authorAttributions":[{"displayName":"홍길동","uri":"https://example.com/a","photoUri":"https://example.com/a.jpg"},{"displayName":"김철수","uri":"https://example.com/b","photoUri":"https://example.com/b.jpg"}]}]}]}
             """;
 
@@ -82,6 +84,8 @@ class GooglePlacesClientTest {
                         containsString("\"languageCode\":\"ko\""),
                         containsString("\"regionCode\":\"KR\"")
                 )))
+                .andExpect(header("X-Goog-FieldMask",
+                        containsString("places.regularOpeningHours.weekdayDescriptions")))
                 .andRespond(withSuccess(SUCCESS_BODY, MediaType.APPLICATION_JSON));
 
         PlacesQuotaService quota = mock(PlacesQuotaService.class);
@@ -98,6 +102,11 @@ class GooglePlacesClientTest {
         assertThat(result.get(0).authorAttributions().get(1).photoUri()).isEqualTo("https://example.com/b.jpg");
         assertThat(result.get(0).businessStatus()).isEqualTo("OPERATIONAL");
         assertThat(result.get(0).openNow()).isTrue();
+        assertThat(result.get(0).openingHours()).containsExactly(
+                "월요일: 오전 10:00~오후 10:00",
+                "화요일: 오전 10:00~오후 10:00",
+                "수요일: 휴무"
+        );
         org.mockito.Mockito.verify(quota).reserve(false, 1L);
         server.verify();
     }
@@ -109,11 +118,14 @@ class GooglePlacesClientTest {
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         server.expect(requestTo("https://places.googleapis.com/v1/places/p1?languageCode=ko&regionCode=KR"))
                 .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-Goog-FieldMask",
+                        containsString("regularOpeningHours.weekdayDescriptions")))
                 .andRespond(withSuccess("""
                         {"id":"p1","displayName":{"text":"테스트 카페"},"formattedAddress":"서울 주소",
                         "rating":4.5,"userRatingCount":100,"location":{"latitude":37.5,"longitude":127.0},
                         "googleMapsUri":"https://maps.google.com/?cid=1","businessStatus":"OPERATIONAL",
-                        "currentOpeningHours":{"openNow":true}}
+                        "currentOpeningHours":{"openNow":true},
+                        "regularOpeningHours":{"weekdayDescriptions":["월요일: 오전 9:00~오후 9:00","화요일: 휴무"]}}
                         """, MediaType.APPLICATION_JSON));
 
         PlaceCandidateDTO result = new GooglePlacesClient(props("key"), builder.build(), objectMapper, quota)
@@ -121,6 +133,10 @@ class GooglePlacesClientTest {
 
         assertThat(result.placeId()).isEqualTo("p1");
         assertThat(result.name()).isEqualTo("테스트 카페");
+        assertThat(result.openingHours()).containsExactly(
+                "월요일: 오전 9:00~오후 9:00",
+                "화요일: 휴무"
+        );
         org.mockito.Mockito.verify(quota).reserveDetails(1L);
         server.verify();
     }
