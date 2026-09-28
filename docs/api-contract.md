@@ -16,16 +16,18 @@
 |------|------|------|
 | `INVALID_PARAM` | 400 | 날짜·페이지·필수값, 파라미터 누락·형식 오류(숫자 변환 실패 포함) |
 | `UNAUTHORIZED` | 401 | 세션 없음/만료 |
-| `FORBIDDEN` | 403 | 본인 댓글이 아님 |
+| `FORBIDDEN` | 403 | 본인 댓글/코스가 아님 |
 | `NOT_FOUND` | 404 | 행사 또는 찜 없음 |
 | `ALREADY_SAVED` | 409 | 같은 회원·같은 행사 중복 찜 |
+| `COURSE_VERSION_CONFLICT` | 409 | 코스가 다른 곳에서 먼저 수정됨. 최신 상세를 다시 조회한 뒤 재시도 |
 | `UPSTREAM_UNAVAILABLE` | 502 | 서울시 API 실패 |
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
 | `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
 | `PLACES_UNAVAILABLE` | 503 | Google Places 조회 실패(키 미설정 포함) |
-| `PLACES_RATE_LIMITED` | 429 | 같은 IP의 Places 1분 호출 한도 초과(기본 검색 20회·사진 40회). 약 1분 뒤 재시도 |
-| `PLACES_QUOTA_EXCEEDED` | 503 | 서버 전체 Places 일일(검색 80·사진 60) 또는 월간(검색·사진 각 900) 한도 초과 |
+| `PLACES_RATE_LIMITED` | 429 | 같은 IP의 Places 1분 호출 한도 초과(기본 검색 20회·사진 40회·상세 20회). 약 1분 뒤 재시도 |
+| `PLACES_QUOTA_EXCEEDED` | 503 | 서버 전체 Places 일일(검색 80·사진 60·상세 80) 또는 월간(각 900) 한도 초과 |
 | `PLACES_QUOTA_BUSY` | 503 | 호출량 기록 충돌이 반복되어 처리하지 못함. 잠시 후 재시도 |
+| `SHARE_ID_UNAVAILABLE` | 503 | 코스 공유 ID 생성 실패. 잠시 후 재시도 |
 
 ## 1. 헬스 · 완료
 
@@ -187,8 +189,8 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 ## 10. 장소 추천(Google Places) · 구현
 
-행사 좌표 근처(또는 코스의 연속된 두 행사 사이)의 식당·카페 후보를 추천합니다. "코스"는 프론트가
-로컬에서 관리하므로 서버는 결과를 저장하지 않고 매 호출마다 Google Places에서 조회만 합니다
+행사 좌표 근처(또는 코스의 연속된 두 행사 사이)의 식당·카페 후보를 추천합니다. 추천 결과 자체는
+서버에 저장하지 않고 매 호출마다 Google Places에서 조회합니다
 (구글 약관상 이름·주소·평점·사진은 캐싱 금지). "다시 추천"과 "5개씩 페이지 넘기기"는 새로 호출하지
 않고, 한 번에 받은 배열 안에서 프론트가 나눠 보여주는 방식을 전제로 합니다.
 
@@ -212,11 +214,11 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 **호출 제한**
 
-| 구분 | 검색(`nearby` + `between` 합산) | 사진(`photo`) | 초과 시 |
-|------|------:|------:|------|
-| 같은 IP, 1분 | 20회 | 40회 | `429 PLACES_RATE_LIMITED` |
-| 서버 전체, 하루 | 80회 | 60회 | `503 PLACES_QUOTA_EXCEEDED` |
-| 서버 전체, 한 달 | 900회 | 900회 | `503 PLACES_QUOTA_EXCEEDED` |
+| 구분 | 검색(`nearby` + `between`) | 사진(`photo`) | 상세(`details`) | 초과 시 |
+|------|------:|------:|------:|------|
+| 같은 IP, 1분 | 20회 | 40회 | 20회 | `429 PLACES_RATE_LIMITED` |
+| 서버 전체, 하루 | 80회 | 60회 | 80회 | `503 PLACES_QUOTA_EXCEEDED` |
+| 서버 전체, 한 달 | 900회 | 900회 | 900회 | `503 PLACES_QUOTA_EXCEEDED` |
 
 - 실제로 Google에 요청이 나가는 호출만 셉니다. 검증에 실패한 요청은 세지 않고, 한도에 걸린 요청은
   어떤 카운트도 차감하지 않습니다.
@@ -227,7 +229,8 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 - `429`는 약 1분 뒤에, `503 PLACES_QUOTA_EXCEEDED`는 다음 날(또는 다음 달)에야 풀립니다. 화면에는
   "잠시 후 다시 시도해 주세요" 정도로 안내하세요.
 - 월간·분당 값은 환경변수(`PLACES_SEARCH_MONTHLY_LIMIT`, `PLACES_PHOTO_MONTHLY_LIMIT`,
-  `PLACES_SEARCH_PER_MINUTE`, `PLACES_PHOTO_PER_MINUTE`)로 바꿀 수 있고, 하루 한도(80·60)는 코드 상수입니다.
+  `PLACES_DETAIL_MONTHLY_LIMIT`, `PLACES_SEARCH_PER_MINUTE`, `PLACES_PHOTO_PER_MINUTE`,
+  `PLACES_DETAIL_PER_MINUTE`)로 바꿀 수 있고, 하루 한도(검색 80·사진 60·상세 80)는 코드 상수입니다.
 - 코스 하나(행사 N개)를 채우면 검색 호출이 `(N-1) * 2`번 나갑니다(구간마다 카페·음식점 각 1회).
 
 **Google Places 언어/지역 설정**
@@ -336,6 +339,23 @@ GET /api/places/between?eventId1=...&eventId2=...&type=restaurant
 거리는 지표면상 **직선거리**의 추정값이라 실제 도보·차량 경로의 거리나 이동 시간이 아닙니다(강·다리·출입구
 등은 반영하지 않음). `detourMeters`는 반올림하지 않은 소수 m이므로 화면에 보여줄 땐 반올림하세요.
 
+### `GET /api/places/details`
+
+저장된 코스에는 카페·음식점의 `placeId`만 보관하므로, 코스를 다시 열 때 최신 장소 정보를 가져오는 용도입니다.
+로그인은 필요하지 않습니다. 공유 코스 화면에서도 동일하게 사용할 수 있습니다.
+
+| 파라미터 | 필수 | 의미 |
+|----------|------|------|
+| `placeId` | O | 코스 스탑에 저장된 Google Place ID |
+
+```
+GET /api/places/details?placeId=ChIJ...
+```
+
+응답은 `nearby`와 같은 `PlaceCandidateDTO` 형식이며 `detourMeters`, `recommendationScore`는 `null`입니다.
+이 호출은 검색·사진과 별도의 상세 조회 호출량을 사용합니다. 저장된 코스 카드 여러 개의 장소 정보를 한꺼번에
+미리 요청하지 말고, 실제 상세 화면에서 필요한 스탑만 조회하세요.
+
 ### `GET /api/places/photo`
 
 `photoName`을 실제로 화면에 띄울 수 있는 이미지로 바꿉니다. **후보 전체가 아니라 실제로 보여줄 사진에
@@ -369,9 +389,90 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 **오류**: 형식이 틀리면 `400`, IP 한도 초과 `429`, 서버 전체 한도 초과·구글 실패·키 미설정은 `503`
 (`PLACES_QUOTA_EXCEEDED` / `PLACES_UNAVAILABLE`)입니다.
 
-## 11. 아직 없음
+## 11. 코스 저장 · 구현
 
-마이페이지 수정·탈퇴, 상세 보완(댓글 외), 코스 저장(FR-14).
+코스 편집(행사/장소 추가·삭제, 순서 변경, 제목 변경)은 프론트에서 처리하고, **저장 또는 수정 버튼을 누를 때만**
+스탑 배열 전체를 서버로 보냅니다. 저장된 코스가 "내가 만든 코스" 목록이고, 그중 별표를 켠 것이
+"즐겨찾기한 코스"입니다. 모든 소유자 API는 세션 쿠키가 필요하며, 다른 회원의 코스 ID에 접근하면 `403`입니다.
+
+### 저장 규칙
+
+- 제목: 공백을 제외하고 1자 이상, 최대 50자. 서버가 제목을 자동 생성하지 않습니다.
+- 스탑: 1~20개, **행사 스탑이 최소 1개** 있어야 합니다. 같은 행사 또는 같은 장소를 두 번 넣을 수 없습니다.
+- `type`: `event`, `cafe`, `restaurant`. `event`는 `eventId`, 나머지는 `placeId`만 보냅니다.
+- 서버는 요청 배열 순서를 그대로 `stopOrder` 0부터 저장합니다.
+- 행사 스탑은 저장 시 서버가 행사 상세를 다시 확인하고 제목·장소·기간·이미지·좌표 스냅샷을 저장합니다.
+- 카페·음식점은 `placeId`만 저장합니다. 화면에 보여줄 최신 정보는 `/api/places/details`로 다시 조회합니다.
+- 수정 시 기존 코스에 이미 있던 `eventId`는 저장된 스냅샷을 재사용하고, 새로 추가된 행사만 다시 조회합니다.
+- `version`은 코스 내용 수정 때만 증가합니다. 별표/공유 토글은 `version`을 올리지 않습니다.
+
+### `POST /api/courses` — 새 코스로 저장
+
+```json
+{
+  "title": "성수 문화 산책",
+  "stops": [
+    { "type": "event", "eventId": "https://culture.seoul.go.kr/..." },
+    { "type": "cafe", "placeId": "ChIJ..." },
+    { "type": "restaurant", "placeId": "ChIJ..." }
+  ]
+}
+```
+
+`201`. 새 코스가 생성되며 초기 `version`은 `1`입니다. 기존 코스를 남기고 "새 코스로 저장"할 때도 이 API를 사용합니다.
+
+### `PUT /api/courses/{courseId}` — 기존 코스 덮어쓰기
+
+```json
+{
+  "title": "성수 문화 산책 수정본",
+  "version": 1,
+  "stops": [
+    { "type": "event", "eventId": "https://culture.seoul.go.kr/..." },
+    { "type": "cafe", "placeId": "ChIJ_NEW..." }
+  ]
+}
+```
+
+프론트가 마지막으로 받은 `version`을 그대로 보내야 합니다. 서버의 최신 버전과 다르면
+`409 COURSE_VERSION_CONFLICT`이며, 최신 상세를 다시 불러온 뒤 사용자에게 재시도를 안내합니다. 성공하면 버전이 1 증가합니다.
+
+### 조회·즐겨찾기·삭제
+
+| 메서드 | 경로 | 결과 |
+|--------|------|------|
+| GET | `/api/courses` | 내가 만든 코스 최신 생성순 |
+| GET | `/api/courses?favorite=true` | 별표 켠 코스의 `favoritedAt` 최신순 |
+| GET | `/api/courses/{courseId}` | 저장된 코스 상세 |
+| PUT | `/api/courses/{courseId}/favorite` body `{ "favorited": true/false }` | 별표 상태 설정(같은 값을 여러 번 보내도 동일) |
+| DELETE | `/api/courses/{courseId}` | `204` |
+
+목록 항목: `courseId`, `title`, `favorited`, `favoritedAt`, `version`, `stopCount`,
+`firstEventTitle`, `firstEventImageUrl`, `shared`, `createdAt`, `updatedAt`.
+
+상세에는 위 기본 정보와 `shareId`, `stops`가 포함됩니다. 각 스탑은 `stopOrder`, `type`, `eventId`, `placeId`와
+행사인 경우 저장 당시의 `eventTitle`, `eventCategory`, `eventDistrict`, `eventPlace`, `eventStartDate`, `eventEndDate`,
+`eventImageUrl`, `eventLatitude`, `eventLongitude`를 가집니다. 장소 스탑의 행사 필드는 `null`입니다.
+
+### 공유 링크
+
+기본은 비공개입니다. 공유를 켜면 백엔드는 추측하기 어려운 `shareId`만 만들고, 프론트가 자기 화면 경로와 합쳐
+예: `/shared/courses/{shareId}` 링크를 만듭니다.
+
+| 메서드 | 경로 | 로그인 | 결과 |
+|--------|------|--------|------|
+| POST | `/api/courses/{courseId}/share` | 필요 | `200 { "shareId": "..." }` (이미 켜져 있으면 같은 ID) |
+| DELETE | `/api/courses/{courseId}/share` | 필요 | `204`, 기존 공유 링크 즉시 무효 |
+| GET | `/api/courses/shared/{shareId}` | 불필요 | 제목·생성/수정일·스탑만 반환. 회원/별표 정보는 노출하지 않음 |
+
+회원 탈퇴(`DELETE /api/auth/me`) 시 세션·관심행사와 함께 해당 회원의 코스/코스 스탑도 삭제됩니다.
+
+행사가 1개인 코스도 저장할 수 있습니다. 코스를 구성할 때 주변 장소 탐색은 그 행사 좌표로
+`/api/places/nearby`를 사용하고, 행사가 2개 이상이면 연속 행사 사이마다 `/api/places/between`을 사용합니다.
+
+## 12. 아직 없음
+
+상세 보완(댓글 외).
 
 ## 로컬 확인
 
@@ -383,3 +484,6 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 6. 로그인 후 댓글 POST → GET → PUT → DELETE
 7. `POST /api/events/views?eventId=...` → 상세 `viewCount` 증가 확인
 8. `GET /api/main/hot-events?limit=6` · `GET /api/main/upcoming-events?limit=6`
+9. 로그인 후 코스 POST → GET 목록/상세 → PUT(version 포함) → favorite → share → DELETE
+10. 공유된 `shareId`로 로그아웃 상태에서 `GET /api/courses/shared/{shareId}`
+11. 저장된 장소 `placeId`로 `GET /api/places/details?placeId=...`
