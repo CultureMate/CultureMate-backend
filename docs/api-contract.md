@@ -106,8 +106,8 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
 | POST | `/api/favorites` body `{ "eventId" }` | `201` 스냅샷. 중복 `409 ALREADY_SAVED` |
-| GET | `/api/favorites` | 배열. 선택 `month=yyyy-MM`이면 그달과 기간이 겹치는 것만 |
-| DELETE | `/api/favorites?eventId={encoded}` | `204`. 없으면 404 |
+| GET | `/api/favorites` | 배열. 선택 `month=yyyy-MM`이면 그달과 기간이 겹치는 것만. 대표 `eventId`당 한 건 |
+| DELETE | `/api/favorites?eventId={encoded}` | `204`. 없으면 404. 대표 ID와 별칭 ID의 찜을 함께 삭제 |
 | DELETE | `/api/favorites/{eventId}` | 슬래시 없는 ID용 |
 
 응답 항목: `eventId`, `title`, `startDate`, `endDate`, `place`, `savedAt`. 날짜가 비정상이면 `null`일 수 있음.
@@ -174,7 +174,7 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
-| GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순 |
+| GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순. `viewCount`는 대표 ID와 별칭 ID의 합 |
 | GET | `/api/main/upcoming-events?district=&limit=6` | `200` `{ "events": [...], "district": "마포구" 또는 null }` 오늘 이후 시작하는 행사, 시작일 오름차순 |
 
 각 항목: `eventId`, `title`, `category`, `district`, `place`, `startDate`, `endDate`, `imageUrl`, `viewCount`, `dDay`(한국 날짜 기준, 시작일 없으면 `null`).

@@ -86,7 +86,7 @@ class FavoriteServiceTest {
 
         when(repository.findByMemberIdAndEventId(1L, "event-1")).thenReturn(Optional.of(september));
         service.delete(1L, "event-1");
-        verify(repository).delete(september);
+        verify(repository).deleteAll(List.of(september));
     }
 
     @Test
@@ -103,6 +103,28 @@ class FavoriteServiceTest {
 
         assertEquals("ALREADY_SAVED", duplicate.getCode());
         verify(repository, never()).save(any());
+    }
+
+    @Test
+    void listKeepsOneFavoritePerCanonicalIdAndDeleteRemovesAliasToo() {
+        FavoriteEntity canonical = new FavoriteEntity(1L, "canonical", "빅무브",
+                LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 20), "DDP", Instant.parse("2026-10-02T00:00:00Z"));
+        FavoriteEntity alias = new FavoriteEntity(1L, "alias", "빅무브",
+                LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 20), "DDP", Instant.parse("2026-10-01T00:00:00Z"));
+        when(repository.findByMemberIdOrderBySavedAtDesc(1L)).thenReturn(List.of(canonical, alias));
+        when(events.canonicalEventId("canonical")).thenReturn("canonical");
+        when(events.canonicalEventId("alias")).thenReturn("canonical");
+
+        var listed = service.list(1L, null);
+
+        assertEquals(1, listed.size());
+        assertEquals("canonical", listed.get(0).eventId());
+
+        when(events.eventIdsIncludingAliases("canonical")).thenReturn(List.of("canonical", "alias"));
+        when(repository.findByMemberIdAndEventId(1L, "canonical")).thenReturn(Optional.of(canonical));
+        when(repository.findByMemberIdAndEventId(1L, "alias")).thenReturn(Optional.of(alias));
+        service.delete(1L, "canonical");
+        verify(repository).deleteAll(List.of(canonical, alias));
     }
 
     @Test

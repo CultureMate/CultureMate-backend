@@ -15,8 +15,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 /** 로그인 회원(memberId) 기준 관심행사 CRUD. */
 @Service
@@ -37,7 +39,7 @@ public class FavoriteService {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
         String canonical = eventService.canonicalEventId(eventId);
-        if (findSaved(memberId, canonical).isPresent()) {
+        if (!findAllSaved(memberId, canonical).isEmpty()) {
             throw BusinessException.conflict("이미 저장된 행사입니다.");
         }
 
@@ -57,17 +59,26 @@ public class FavoriteService {
     @Transactional(readOnly = true)
     public List<FavoriteResponseDTO> list(Long memberId, String month) {
         List<FavoriteEntity> items = favoriteRepository.findByMemberIdOrderBySavedAtDesc(memberId);
-        if (month == null || month.isBlank()) {
-            return items.stream().map(FavoriteResponseDTO::fromEntity).toList();
+        if (month != null && !month.isBlank()) {
+            YearMonth yearMonth = parseMonth(month);
+            LocalDate from = yearMonth.atDay(1);
+            LocalDate to = yearMonth.atEndOfMonth();
+            items = items.stream()
+                    .filter(item -> EventDates.closedRange(item.getStartDate(), item.getEndDate())
+                            .map(range -> range.overlaps(from, to))
+                            .orElse(false))
+                    .toList();
         }
-        YearMonth yearMonth = parseMonth(month);
-        LocalDate from = yearMonth.atDay(1);
-        LocalDate to = yearMonth.atEndOfMonth();
-        return items.stream()
-                .filter(item -> EventDates.closedRange(item.getStartDate(), item.getEndDate())
-                        .map(range -> range.overlaps(from, to))
-                        .orElse(false))
-                .map(FavoriteResponseDTO::fromEntity)
+        Map<String, FavoriteEntity> unique = new LinkedHashMap<>();
+        for (FavoriteEntity item : items) {
+            String canonical = canonicalKey(item.getEventId());
+            FavoriteEntity current = unique.get(canonical);
+            if (current == null || (!canonical.equals(current.getEventId()) && canonical.equals(item.getEventId()))) {
+                unique.put(canonical, item);
+            }
+        }
+        return unique.entrySet().stream()
+                .map(entry -> toResponse(entry.getKey(), entry.getValue()))
                 .toList();
     }
 
@@ -76,19 +87,36 @@ public class FavoriteService {
         if (id.isBlank()) {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
-        FavoriteEntity existing = findSaved(memberId, eventService.canonicalEventId(id))
-                .orElseThrow(() -> BusinessException.notFound("저장된 행사가 없습니다."));
-        favoriteRepository.delete(existing);
+        List<FavoriteEntity> saved = findAllSaved(memberId, eventService.canonicalEventId(id));
+        if (saved.isEmpty()) {
+            throw BusinessException.notFound("저장된 행사가 없습니다.");
+        }
+        favoriteRepository.deleteAll(saved);
     }
 
-    private Optional<FavoriteEntity> findSaved(Long memberId, String canonicalEventId) {
+    private List<FavoriteEntity> findAllSaved(Long memberId, String canonicalEventId) {
+        List<FavoriteEntity> found = new ArrayList<>();
         for (String id : eventService.eventIdsIncludingAliases(canonicalEventId)) {
-            Optional<FavoriteEntity> found = favoriteRepository.findByMemberIdAndEventId(memberId, id);
-            if (found.isPresent()) {
-                return found;
-            }
+            favoriteRepository.findByMemberIdAndEventId(memberId, id).ifPresent(found::add);
         }
-        return Optional.empty();
+        return found;
+    }
+
+    private String canonicalKey(String eventId) {
+        try {
+            return eventService.canonicalEventId(eventId);
+        } catch (BusinessException ex) {
+            return eventId;
+        }
+    }
+
+    private static FavoriteResponseDTO toResponse(String canonicalEventId, FavoriteEntity item) {
+        FavoriteResponseDTO dto = FavoriteResponseDTO.fromEntity(item);
+        if (canonicalEventId.equals(dto.eventId())) {
+            return dto;
+        }
+        return new FavoriteResponseDTO(
+                canonicalEventId, dto.title(), dto.startDate(), dto.endDate(), dto.place(), dto.savedAt());
     }
 
     private static YearMonth parseMonth(String month) {
