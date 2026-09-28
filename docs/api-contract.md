@@ -230,6 +230,12 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
   `PLACES_SEARCH_PER_MINUTE`, `PLACES_PHOTO_PER_MINUTE`)로 바꿀 수 있고, 하루 한도(80·60)는 코드 상수입니다.
 - 코스 하나(행사 N개)를 채우면 검색 호출이 `(N-1) * 2`번 나갑니다(구간마다 카페·음식점 각 1회).
 
+**Google Places 언어/지역 설정**
+
+- Nearby Search 요청에는 `languageCode: "ko"`, `regionCode: "KR"`을 넣습니다.
+- 장소명과 주소를 한국어/대한민국 기준으로 우선 받기 위한 설정입니다. 다만 Google 원천 데이터 자체에
+  번역이 없거나 상호에 외국어가 포함된 경우 일부 외국어가 남을 수 있습니다.
+
 **응답 필드(`nearby`, `between` 공통)**
 
 | 필드 | 의미 |
@@ -243,8 +249,7 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 | `openNow` | 지금 영업 중인지. 영업시간 정보가 없으면 `null`(모름, 폐업 아님) |
 | `detourMeters`, `recommendationScore` | `between`에서만 채워짐(우회 거리 m, 최종 추천 점수). `nearby`는 `null` |
 
-**변경 주의**: 예전의 `photoAttribution`(문자열, 첫 저작자 이름만)은 없어지고 `authorAttributions`
-배열로 바뀌었습니다. 사진 옆에는 배열의 **모든 저작자**를 표시해야 합니다(구글 약관상 필수).
+사진 옆에는 `authorAttributions` 배열의 **모든 저작자**를 표시해야 합니다(구글 약관상 필수).
 
 ### `GET /api/places/nearby`
 
@@ -350,6 +355,16 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 `<img src="/api/places/photo?name=...">`로 쓰면 되고, API 키는 서버 밖으로 나가지 않습니다.
 같은 이미지를 다시 그릴 때마다 호출이 나가면 사진 한도와 IP 제한을 빨리 쓰니, 한 번 받은 이미지는
 프론트에서 재사용하세요.
+
+**프론트 구현 주의 — 사진은 lazy loading 하세요.**
+
+- 카드 목록을 받았다고 모든 `photoName`을 즉시 `/api/places/photo`로 요청하지 않습니다.
+- 현재 화면(viewport)에 들어온 카드의 사진만 요청하고, 아직 보이지 않는 카드는 스크롤되어 보일 때 요청합니다.
+- 단순 이미지라면 `loading="lazy"`를 사용할 수 있고, 카드 컴포넌트에서 호출 시점을 직접 제어한다면
+  `IntersectionObserver`로 화면 진입 시 `src`를 설정하는 방식을 권장합니다.
+- 페이지 이동이나 재렌더링으로 같은 사진 URL을 반복 요청하지 않도록 이미 받은 결과를 재사용하세요.
+- 사진 호출은 검색과 별도 한도를 사용하며 현재 기본 IP 제한은 **분당 40회**입니다. 카드 수가 많은 화면에서
+  eager loading을 하면 불필요하게 `429 PLACES_RATE_LIMITED`에 도달할 수 있습니다.
 
 **오류**: 형식이 틀리면 `400`, IP 한도 초과 `429`, 서버 전체 한도 초과·구글 실패·키 미설정은 `503`
 (`PLACES_QUOTA_EXCEEDED` / `PLACES_UNAVAILABLE`)입니다.
