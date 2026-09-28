@@ -86,6 +86,18 @@ class PlacesQuotaServiceTest {
         } finally { executor.shutdownNow(); }
     }
 
+    @Test void detailQuotaIsIndependentFromSearchAndPhoto() {
+        var svc = new PlacesQuotaService(daily, buckets, manager,
+                900, 900, 900, 100, 100, 1, clock);
+        svc.reserveDetails("a");
+        assertThatThrownBy(() -> svc.reserveDetails("a"))
+                .hasFieldOrPropertyWithValue("code", "PLACES_RATE_LIMITED");
+        var stored = daily.findById(today).orElseThrow();
+        assertThat(stored.getCallCount()).isZero();
+        assertThat(stored.getPhotoCallCount()).isZero();
+        assertThat(stored.getDetailCallCount()).isEqualTo(1);
+    }
+
     @Test void dailyCapsRemainIndependent() {
         daily.save(new PlacesApiUsageEntity(today, 79, 59));
         service(900, 100).reserve(false, "a");

@@ -34,6 +34,7 @@ class GooglePlacesClientTest {
         assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("food"), 500, 20)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("cafe"), 50001, 20)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.resolvePhotoUri("places/a/photos/b?key=other", 400)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.getDetails("bad/place/id")).isInstanceOf(BusinessException.class);
         org.mockito.Mockito.verifyNoInteractions(quota);
     }
 
@@ -95,6 +96,29 @@ class GooglePlacesClientTest {
         assertThat(result.get(0).authorAttributions().get(1).photoUri()).isEqualTo("https://example.com/b.jpg");
         assertThat(result.get(0).businessStatus()).isEqualTo("OPERATIONAL");
         assertThat(result.get(0).openNow()).isTrue();
+        server.verify();
+    }
+
+    @Test
+    void placeDetailsUsesKoreanRegionAndParsesOnePlace() {
+        var quota = mock(PlacesQuotaService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://places.googleapis.com/v1/places/p1?languageCode=ko&regionCode=KR"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":"p1","displayName":{"text":"테스트 카페"},"formattedAddress":"서울 주소",
+                        "rating":4.5,"userRatingCount":100,"location":{"latitude":37.5,"longitude":127.0},
+                        "googleMapsUri":"https://maps.google.com/?cid=1","businessStatus":"OPERATIONAL",
+                        "currentOpeningHours":{"openNow":true}}
+                        """, MediaType.APPLICATION_JSON));
+
+        PlaceCandidateDTO result = new GooglePlacesClient(props("key"), builder.build(), objectMapper, quota)
+                .getDetails("p1");
+
+        assertThat(result.placeId()).isEqualTo("p1");
+        assertThat(result.name()).isEqualTo("테스트 카페");
+        org.mockito.Mockito.verify(quota).reserveDetails();
         server.verify();
     }
 

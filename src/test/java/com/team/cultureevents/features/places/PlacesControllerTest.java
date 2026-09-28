@@ -21,7 +21,7 @@ class PlacesControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {
             "/api/places/nearby", "/api/places/nearby?latitude=37.5",
-            "/api/places/between?eventId1=a&eventId2=b", "/api/places/photo",
+            "/api/places/between?eventId1=a&eventId2=b", "/api/places/photo", "/api/places/details",
             "/api/places/nearby?latitude=abc&longitude=127",
             "/api/places/nearby?latitude=NaN&longitude=127",
             "/api/places/nearby?latitude=37.5&longitude=Infinity",
@@ -29,6 +29,7 @@ class PlacesControllerTest {
             "/api/places/nearby?latitude=37.5&longitude=127&radius=50001",
             "/api/places/nearby?latitude=37.5&longitude=127&types=food",
             "/api/places/between?eventId1=a&eventId2=b&type=bar",
+            "/api/places/details?placeId=bad%2Fplace",
             "/api/places/photo?name=places/a/photos/b/media",
             "/api/places/photo?name=places/a/photos/b%3Fx=1"
     })

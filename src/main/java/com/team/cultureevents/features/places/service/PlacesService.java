@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 좌표 근처 식당·카페 추천. 서버는 아무것도 저장하지 않는다("코스"는 프론트가 로컬에서 관리).
+ * 좌표 근처 식당·카페 추천. 추천 결과 자체는 서버에 저장하지 않는다.
  * "다시 추천"은 이 API를 다시 부르는 게 아니라, 한 번에 받은 리스트를 프론트가 순서대로 보여주는 방식을 전제로 한다.
  *
  * Google Places Nearby Search는 "평점순" 정렬 옵션이 없어(POPULARITY/DISTANCE만 지원),
@@ -131,6 +131,12 @@ public class PlacesService {
                         .thenComparingDouble(PlaceCandidateDTO::detourMeters)
                         .thenComparing(PlaceCandidateDTO::placeId, Comparator.nullsLast(Comparator.naturalOrder())))
                 .toList();
+    }
+
+    /** 저장된 코스의 placeId를 최신 Google 장소 정보로 다시 조회한다. */
+    public PlaceCandidateDTO getDetails(String placeId) {
+        PlacesRequestValidator.placeId(placeId);
+        return placesClient.getDetails(placeId);
     }
 
     /** 특정 사진 참조값을, 실제 화면에 띄울 수 있는 이미지 URL로 바꿔서 돌려준다. */
