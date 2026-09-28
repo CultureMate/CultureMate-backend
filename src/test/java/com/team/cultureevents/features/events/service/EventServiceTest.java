@@ -6,6 +6,7 @@ import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
 import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
 import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
+import com.team.cultureevents.features.views.domain.entity.EventViewEntity;
 import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,37 @@ class EventServiceTest {
 
         assertEquals(id, service.getDetail(id).eventId());
         assertThrows(BusinessException.class, () -> service.getDetail("https://culture.seoul.go.kr/event?code=A"));
+    }
+
+    @Test
+    void detailFollowsAliasIdOfMergedDuplicate() {
+        SeoulEvent merged = new SeoulEvent("https://culture.seoul.go.kr/old", "빅무브", "공연", "중구", "DDP",
+                "2026-10-01", "2026-10-20", "", "", "", "", 37.56, 127.01, List.of("https://culture.seoul.go.kr/new"));
+        when(cache.getIfFresh()).thenReturn(List.of(merged));
+
+        // 합쳐져 사라진 주소로 조회해도 대표 행사(대표 eventId)가 나온다
+        assertEquals("https://culture.seoul.go.kr/old", service.getDetail("https://culture.seoul.go.kr/new").eventId());
+        assertEquals("https://culture.seoul.go.kr/old", service.getDetail("https://culture.seoul.go.kr/old").eventId());
+    }
+
+    @Test
+    void detailKeepsViewCountAndSummaryStoredUnderAlias() {
+        SeoulEvent merged = new SeoulEvent("https://culture.seoul.go.kr/old", "빅무브", "공연", "중구", "DDP",
+                "2026-10-01", "2026-10-20", "", "", "", "", 37.56, 127.01,
+                List.of("https://culture.seoul.go.kr/new"));
+        when(cache.getIfFresh()).thenReturn(List.of(merged));
+        when(eventViewRepository.findById("https://culture.seoul.go.kr/old")).thenReturn(Optional.empty());
+        when(eventViewRepository.findById("https://culture.seoul.go.kr/new"))
+                .thenReturn(Optional.of(new EventViewEntity("https://culture.seoul.go.kr/new", 4)));
+        when(aiSummaryRepository.findById("https://culture.seoul.go.kr/old")).thenReturn(Optional.empty());
+        when(aiSummaryRepository.findById("https://culture.seoul.go.kr/new"))
+                .thenReturn(Optional.of(new AiSummaryEntity("https://culture.seoul.go.kr/new", "별칭 소개",
+                        Instant.parse("2026-09-01T00:00:00Z"))));
+
+        var detail = service.getDetail("https://culture.seoul.go.kr/old");
+
+        assertEquals(4, detail.viewCount());
+        assertEquals("별칭 소개", detail.summary());
     }
 
     @Test
@@ -106,6 +138,36 @@ class EventServiceTest {
         when(aiSummaryRepository.findById("id-1")).thenReturn(Optional.empty());
 
         assertEquals(null, service.getDetail("id-1").summary());
+    }
+
+    @Test
+    void listIncludesSavedViewCountAndDefaultsToZeroWithoutIncrementing() {
+        when(cache.getIfFresh()).thenReturn(List.of(event("viewed", "전시"), event("new", "공연")));
+        when(eventViewRepository.findAll()).thenReturn(List.of(new EventViewEntity("viewed", 17)));
+
+        var result = service.list(List.of(), List.of(), List.of(), null, null, null, 0, 20);
+
+        assertEquals(17, result.events().stream()
+                .filter(event -> event.eventId().equals("viewed"))
+                .findFirst().orElseThrow().viewCount());
+        assertEquals(0, result.events().stream()
+                .filter(event -> event.eventId().equals("new"))
+                .findFirst().orElseThrow().viewCount());
+    }
+
+    @Test
+    void listIncludesViewCountsStoredUnderMergedAliases() {
+        SeoulEvent merged = new SeoulEvent("canonical", "합쳐진 행사", "전시", "중구", "DDP",
+                "2026-10-01", "2026-10-20", "", "", "", "", null, null,
+                List.of("alias"));
+        when(cache.getIfFresh()).thenReturn(List.of(merged));
+        when(eventViewRepository.findAll()).thenReturn(List.of(
+                new EventViewEntity("canonical", 1),
+                new EventViewEntity("alias", 50)));
+
+        var result = service.list(List.of(), List.of(), List.of(), null, null, null, 0, 20);
+
+        assertEquals(51, result.events().get(0).viewCount());
     }
 
     private static SeoulEvent event(String id, String category) {

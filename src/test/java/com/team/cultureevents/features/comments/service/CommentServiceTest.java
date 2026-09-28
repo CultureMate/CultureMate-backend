@@ -6,6 +6,8 @@ import com.team.cultureevents.features.comments.domain.dto.CommentResponseDTO;
 import com.team.cultureevents.features.comments.domain.entity.CommentEntity;
 import com.team.cultureevents.features.comments.repository.CommentRepository;
 import com.team.cultureevents.features.commons.handler.BusinessException;
+import com.team.cultureevents.features.events.service.EventService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,8 +37,18 @@ class CommentServiceTest {
     @Mock
     MemberRepository memberRepository;
 
+    @Mock
+    EventService eventService;
+
     @InjectMocks
     CommentService commentService;
+
+    @BeforeEach
+    void eventIdsPassThrough() {
+        lenient().when(eventService.canonicalEventId(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(eventService.eventIdsIncludingAliases(any()))
+                .thenAnswer(invocation -> List.of(invocation.getArgument(0, String.class)));
+    }
 
     @Test
     void createSavesTrimmedContent() {
@@ -66,7 +79,7 @@ class CommentServiceTest {
     @Test
     void listReturnsMappedDtos() {
         CommentEntity existing = new CommentEntity("event-1", 1L, null, "원문", Instant.now());
-        when(commentRepository.findByEventIdOrderByCreatedAtAsc("event-1"))
+        when(commentRepository.findByEventIdInOrderByCreatedAtAsc(List.of("event-1")))
                 .thenReturn(List.of(existing));
 
         List<CommentResponseDTO> list = commentService.list("event-1");
@@ -78,7 +91,7 @@ class CommentServiceTest {
     void listIncludesNicknameAndNullForWithdrawnMember() throws Exception {
         CommentEntity byMember = new CommentEntity("event-1", 1L, null, "안녕", Instant.now());
         CommentEntity byWithdrawn = new CommentEntity("event-1", 2L, null, "탈퇴", Instant.now());
-        when(commentRepository.findByEventIdOrderByCreatedAtAsc("event-1"))
+        when(commentRepository.findByEventIdInOrderByCreatedAtAsc(List.of("event-1")))
                 .thenReturn(List.of(byMember, byWithdrawn));
         MemberEntity member = new MemberEntity("kakao-1", "컬처러버");
         Field id = MemberEntity.class.getDeclaredField("memberId");
@@ -103,5 +116,21 @@ class CommentServiceTest {
 
         verify(commentRepository).deleteAll(List.of(reply));
         verify(commentRepository).delete(parent);
+    }
+
+    @Test
+    void listIncludesCommentStoredUnderAlias() {
+        when(eventService.eventIdsIncludingAliases("canonical"))
+                .thenReturn(List.of("canonical", "alias"));
+        CommentEntity aliasComment = new CommentEntity("alias", 1L, null, "별칭 댓글", Instant.now());
+        when(commentRepository.findByEventIdInOrderByCreatedAtAsc(List.of("canonical", "alias")))
+                .thenReturn(List.of(aliasComment));
+        when(memberRepository.findAllById(any())).thenReturn(List.of());
+
+        List<CommentResponseDTO> list = commentService.list("canonical");
+
+        assertEquals(1, list.size());
+        assertEquals("별칭 댓글", list.get(0).content());
+        assertEquals("alias", list.get(0).eventId());
     }
 }

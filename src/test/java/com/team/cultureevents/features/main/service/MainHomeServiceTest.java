@@ -3,6 +3,7 @@ package com.team.cultureevents.features.main.service;
 import com.team.cultureevents.features.seoul.SeoulEventCache;
 import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
+import com.team.cultureevents.features.views.domain.entity.EventViewEntity;
 import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.junit.jupiter.api.Test;
 
@@ -40,6 +41,42 @@ class MainHomeServiceTest {
         var all = service.upcomingEvents(null, 10);
         assertEquals(3, all.events().size());
         assertNull(all.district());
+    }
+
+    @Test
+    void hotEventsIncludeAliasViewCount() {
+        when(cache.getIfFresh()).thenReturn(List.of(merged("canonical", "alias")));
+        when(views.findAll()).thenReturn(List.of(
+                new EventViewEntity("canonical", 1),
+                new EventViewEntity("alias", 50)));
+
+        var hot = service.hotEvents(6);
+
+        assertEquals(1, hot.events().size());
+        assertEquals("canonical", hot.events().get(0).eventId());
+        assertEquals(51, hot.events().get(0).viewCount());
+    }
+
+    @Test
+    void hotEventsRankByViewCountIncludingAliases() {
+        when(cache.getIfFresh()).thenReturn(List.of(
+                event("plain", "중구", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 2)),
+                merged("canonical", "alias")));
+        when(views.findAll()).thenReturn(List.of(
+                new EventViewEntity("plain", 40),
+                new EventViewEntity("canonical", 1),
+                new EventViewEntity("alias", 50)));
+
+        var hot = service.hotEvents(6);
+
+        assertEquals(List.of("canonical", "plain"), hot.events().stream().map(e -> e.eventId()).toList());
+        assertEquals(51, hot.events().get(0).viewCount());
+        assertEquals(40, hot.events().get(1).viewCount());
+    }
+
+    private static SeoulEvent merged(String canonicalId, String aliasId) {
+        return new SeoulEvent(canonicalId, canonicalId, "공연", "중구", "DDP",
+                "2026-10-01", "2026-10-20", "", "", "", "", null, null, List.of(aliasId));
     }
 
     private static SeoulEvent event(String id, String district, LocalDate start, LocalDate end) {

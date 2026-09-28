@@ -10,6 +10,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -31,10 +32,48 @@ public class SummaryService {
         this.openAiClient = openAiClient;
     }
 
-    public SummaryResponseDTO createOrGet(String eventId) {
-        return aiSummaryRepository.findById(eventId)
-                .map(SummaryResponseDTO::fromEntity)
+    public SummaryResponseDTO createOrGet(String rawEventId) {
+        String eventId = eventService.canonicalEventId(rawEventId);
+        return findStored(eventId)
+                .map(saved -> saved.getEventId().equals(eventId)
+                        ? SummaryResponseDTO.fromEntity(saved)
+                        : copyToCanonical(eventId, saved))
                 .orElseGet(() -> generateAndSave(eventId));
+    }
+
+    private Optional<AiSummaryEntity> findStored(String canonicalEventId) {
+        Optional<AiSummaryEntity> direct = aiSummaryRepository.findById(canonicalEventId);
+        if (direct.isPresent()) {
+            return direct;
+        }
+        for (String id : eventService.eventIdsIncludingAliases(canonicalEventId)) {
+            if (canonicalEventId.equals(id)) {
+                continue;
+            }
+            Optional<AiSummaryEntity> alias = aiSummaryRepository.findById(id);
+            if (alias.isPresent()) {
+                return alias;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private SummaryResponseDTO copyToCanonical(String canonicalEventId, AiSummaryEntity alias) {
+        synchronized (locks.computeIfAbsent(canonicalEventId, id -> new Object())) {
+            var already = aiSummaryRepository.findById(canonicalEventId);
+            if (already.isPresent()) {
+                return SummaryResponseDTO.fromEntity(already.get());
+            }
+            AiSummaryEntity copied = new AiSummaryEntity(canonicalEventId, alias.getSummary(), alias.getCreatedAt());
+            try {
+                aiSummaryRepository.save(copied);
+                return SummaryResponseDTO.fromEntity(copied);
+            } catch (DataIntegrityViolationException duplicated) {
+                return aiSummaryRepository.findById(canonicalEventId)
+                        .map(SummaryResponseDTO::fromEntity)
+                        .orElseThrow(() -> duplicated);
+            }
+        }
     }
 
     private SummaryResponseDTO generateAndSave(String eventId) {

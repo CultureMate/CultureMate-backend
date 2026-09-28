@@ -10,6 +10,7 @@
 - 세션 쿠키: `CULTUREMATE_SESSION` HttpOnly, 7일. 인증 fetch는 `credentials: 'include'`
 - 관심 행사(찜)는 로그인 회원 기준. 세션 쿠키 없으면 `401`
 - 서울시 원본은 30분 캐시. 행사 테이블 없음
+- 원본 정리 규칙: 같은 행사가 여러 번 등록된 경우(제목·장소의 공백 제거·영문 소문자 통일 + 시작일이 같음, 종료일은 비교하지 않음) 하나로 합친다. 내용(이미지·기간·장소 등)은 등록일(`RGSTDATE`)이 가장 최신인 행을, 대표 `eventId`는 가장 먼저 등록된 행의 주소를 쓴다. 상세·조회수·댓글·찜·소개문은 저장·조회 전에 대표 `eventId`로 맞춘다. 합치기 전에 별칭 주소로 저장된 댓글·찜·소개문·조회수도 대표 행사에서 함께 본다
 
 | code | HTTP | 의미 |
 |------|------|------|
@@ -65,13 +66,15 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
     "endDate": "2026-09-25",
     "imageUrl": "https://...",
     "latitude": 37.55,
-    "longitude": 126.91
+    "longitude": 126.91,
+    "viewCount": 17
   }]
 }
 ```
 
 `count`는 이번 배열 길이, `totalCount`는 필터 전체. 페이지 없으면 `page`/`size`는 `null`.  
-`latitude`·`longitude`는 서울시 원본 `LAT`·`LOT`(뒤바뀐 행은 서울 범위로 바로잡음). 없거나 범위 밖이면 `null`.  
+`viewCount`는 대표 ID와 별칭 ID에 저장된 조회수의 합이며 기록이 없으면 `0`. 목록 조회 자체는 조회수를 증가시키지 않음.
+`latitude`·`longitude`는 서울시 원본 `LAT`·`LOT`. 값 앞쪽 숫자만 읽고(예: `37.57~2` → `37.57`), 뒤바뀐 행은 서울 범위로 바로잡음. 없거나 서울 범위 밖이면 `null`(온라인 행사 등). FE는 좌표가 없으면 장소명 검색 또는 위치 정보 없음으로 처리.  
 원본 시작일 > 종료일이면 날짜 검색에서 제외하고, 필터 없는 목록·상세에서는 날짜를 빈 문자열로 줍니다. 화면은 「일정 확인 필요」.
 
 ### `GET /api/events/detail?eventId={encoded}`
@@ -109,8 +112,8 @@ await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
 | POST | `/api/favorites` body `{ "eventId" }` | `201` 스냅샷. 중복 `409 ALREADY_SAVED` |
-| GET | `/api/favorites` | 배열. 선택 `month=yyyy-MM`이면 그달과 기간이 겹치는 것만 |
-| DELETE | `/api/favorites?eventId={encoded}` | `204`. 없으면 404 |
+| GET | `/api/favorites` | 배열. 선택 `month=yyyy-MM`이면 그달과 기간이 겹치는 것만. 대표 `eventId`당 한 건 |
+| DELETE | `/api/favorites?eventId={encoded}` | `204`. 없으면 404. 대표 ID와 별칭 ID의 찜을 함께 삭제 |
 | DELETE | `/api/favorites/{eventId}` | 슬래시 없는 ID용 |
 
 응답 항목: `eventId`, `title`, `startDate`, `endDate`, `place`, `savedAt`. 날짜가 비정상이면 `null`일 수 있음.
@@ -177,7 +180,7 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
-| GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순 |
+| GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순. `viewCount`는 대표 ID와 별칭 ID의 합 |
 | GET | `/api/main/upcoming-events?district=&limit=6` | `200` `{ "events": [...], "district": "마포구" 또는 null }` 오늘 이후 시작하는 행사, 시작일 오름차순 |
 
 각 항목: `eventId`, `title`, `category`, `district`, `place`, `startDate`, `endDate`, `imageUrl`, `viewCount`, `dDay`(한국 날짜 기준, 시작일 없으면 `null`).

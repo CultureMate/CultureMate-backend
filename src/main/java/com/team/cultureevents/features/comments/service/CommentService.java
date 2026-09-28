@@ -6,6 +6,7 @@ import com.team.cultureevents.features.comments.domain.dto.CommentResponseDTO;
 import com.team.cultureevents.features.comments.domain.entity.CommentEntity;
 import com.team.cultureevents.features.comments.repository.CommentRepository;
 import com.team.cultureevents.features.commons.handler.BusinessException;
+import com.team.cultureevents.features.events.service.EventService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,22 +21,26 @@ public class CommentService {
 
     private final CommentRepository commentRepository;
     private final MemberRepository memberRepository;
+    private final EventService eventService;
 
-    public CommentService(CommentRepository commentRepository, MemberRepository memberRepository) {
+    public CommentService(CommentRepository commentRepository, MemberRepository memberRepository,
+                          EventService eventService) {
         this.commentRepository = commentRepository;
         this.memberRepository = memberRepository;
+        this.eventService = eventService;
     }
 
     @Transactional
     public CommentResponseDTO create(String eventId, Long memberId, Long parentId, String content) {
+        String canonical = eventService.canonicalEventId(eventId);
         if (parentId != null) {
             CommentEntity parent = commentRepository.findById(parentId)
                     .orElseThrow(() -> BusinessException.notFound("부모 댓글을 찾을 수 없습니다."));
-            if (!parent.getEventId().equals(eventId)) {
+            if (!canonical.equals(eventService.canonicalEventId(parent.getEventId()))) {
                 throw BusinessException.badRequest("부모 댓글과 행사가 일치하지 않습니다.");
             }
         }
-        CommentEntity comment = new CommentEntity(eventId, memberId, parentId, content.trim(), Instant.now());
+        CommentEntity comment = new CommentEntity(canonical, memberId, parentId, content.trim(), Instant.now());
         return withNickname(commentRepository.save(comment));
     }
 
@@ -44,7 +49,8 @@ public class CommentService {
         if (eventId == null || eventId.isBlank()) {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
-        List<CommentEntity> comments = commentRepository.findByEventIdOrderByCreatedAtAsc(eventId);
+        List<CommentEntity> comments = commentRepository.findByEventIdInOrderByCreatedAtAsc(
+                eventService.eventIdsIncludingAliases(eventId));
         Map<Long, String> nicknames = memberRepository.findAllById(
                         comments.stream().map(CommentEntity::getMemberId).distinct().toList()).stream()
                 .filter(member -> member.getNickname() != null)

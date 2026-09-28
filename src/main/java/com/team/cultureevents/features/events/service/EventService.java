@@ -11,6 +11,7 @@ import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
 import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
 import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
+import com.team.cultureevents.features.views.domain.entity.EventViewEntity;
 import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.springframework.stereotype.Service;
 
@@ -20,8 +21,10 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class EventService {
@@ -75,30 +78,44 @@ public class EventService {
                         Comparator.nullsLast(Comparator.naturalOrder())
                 ).thenComparing(SeoulEvent::title, Comparator.nullsLast(String::compareTo)))
                 .toList();
+        Map<String, Integer> viewCounts = viewCountMap();
 
         boolean paged = page != null || size != null;
         if (!paged) {
             return new EventListResponseDTO(filtered.size(), filtered.size(), null, null,
-                    filtered.stream().map(this::toSummary).toList());
+                    filtered.stream().map(event -> toSummary(event, viewCounts)).toList());
         }
         int actualPage = page == null ? 0 : page;
         int actualSize = size == null ? 20 : size;
         long first = (long) actualPage * actualSize;
         List<EventSummaryResponseDTO> items = first >= filtered.size() ? List.of()
                 : filtered.subList((int) first, Math.min(filtered.size(), (int) first + actualSize))
-                .stream().map(this::toSummary).toList();
+                .stream().map(event -> toSummary(event, viewCounts)).toList();
         return new EventListResponseDTO(items.size(), filtered.size(), actualPage, actualSize, items);
     }
 
     public EventDetailResponseDTO getDetail(String rawEventId) {
+        return toDetail(requireEvent(rawEventId));
+    }
+
+    /** 요청 eventId가 별칭이면 대표 eventId로 바꾼다. 없는 행사면 404. */
+    public String canonicalEventId(String rawEventId) {
+        return requireEvent(rawEventId).eventId();
+    }
+
+    /** 대표 ID와, 그 행사로 합쳐진 별칭 ID. 기존에 별칭으로 저장된 데이터를 함께 조회할 때 쓴다. */
+    public List<String> eventIdsIncludingAliases(String rawEventId) {
+        return idsOf(requireEvent(rawEventId));
+    }
+
+    private SeoulEvent requireEvent(String rawEventId) {
         String eventId = rawEventId == null ? "" : rawEventId.trim();
         if (eventId.isBlank()) {
             throw BusinessException.badRequest("eventId가 필요합니다.");
         }
         return loadEvents().stream()
-                .filter(e -> eventId.equals(e.eventId()))
+                .filter(e -> eventId.equals(e.eventId()) || e.aliasIds().contains(eventId))
                 .findFirst()
-                .map(this::toDetail)
                 .orElseThrow(() -> BusinessException.notFound("존재하지 않는 행사입니다."));
     }
 
@@ -112,23 +129,43 @@ public class EventService {
         return fresh;
     }
 
-    private EventSummaryResponseDTO toSummary(SeoulEvent e) {
+    private EventSummaryResponseDTO toSummary(SeoulEvent e, Map<String, Integer> viewCounts) {
         boolean invalidPeriod = EventDates.inverted(e.startDate(), e.endDate());
         return new EventSummaryResponseDTO(
                 e.eventId(), e.title(), e.category(), e.district(),
                 e.place(), invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
-                emptyToBlank(e.imageUrl()), e.latitude(), e.longitude()
+                emptyToBlank(e.imageUrl()), e.latitude(), e.longitude(),
+                viewCount(e, viewCounts)
         );
+    }
+
+    private static int viewCount(SeoulEvent event, Map<String, Integer> viewCounts) {
+        int total = viewCounts.getOrDefault(event.eventId(), 0);
+        for (String aliasId : event.aliasIds()) {
+            total += viewCounts.getOrDefault(aliasId, 0);
+        }
+        return total;
+    }
+
+    private Map<String, Integer> viewCountMap() {
+        return eventViewRepository.findAll().stream()
+                .collect(Collectors.toMap(
+                        EventViewEntity::getEventId,
+                        EventViewEntity::getViewCount,
+                        Integer::max
+                ));
     }
 
     private EventDetailResponseDTO toDetail(SeoulEvent e) {
         boolean invalidPeriod = EventDates.inverted(e.startDate(), e.endDate());
-        int viewCount = eventViewRepository.findById(e.eventId())
-                .map(v -> v.getViewCount())
-                .orElse(0);
-        String summary = aiSummaryRepository.findById(e.eventId())
-                .map(AiSummaryEntity::getSummary)
-                .orElse(null);
+        int viewCount = 0;
+        String summary = null;
+        for (String id : idsOf(e)) {
+            viewCount += eventViewRepository.findById(id).map(v -> v.getViewCount()).orElse(0);
+            if (summary == null) {
+                summary = aiSummaryRepository.findById(id).map(AiSummaryEntity::getSummary).orElse(null);
+            }
+        }
         return new EventDetailResponseDTO(
                 e.eventId(), e.title(), e.category(), e.district(), e.place(),
                 invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
@@ -136,6 +173,16 @@ public class EventService {
                 emptyToBlank(e.originalUrl()), emptyToBlank(e.imageUrl()), viewCount,
                 e.latitude(), e.longitude(), summary
         );
+    }
+
+    private static List<String> idsOf(SeoulEvent event) {
+        if (event.aliasIds().isEmpty()) {
+            return List.of(event.eventId());
+        }
+        List<String> ids = new ArrayList<>();
+        ids.add(event.eventId());
+        ids.addAll(event.aliasIds());
+        return List.copyOf(ids);
     }
 
     private static String emptyToBlank(String v) {
