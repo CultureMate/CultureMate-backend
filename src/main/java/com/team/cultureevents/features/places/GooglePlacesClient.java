@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -35,6 +36,7 @@ public class GooglePlacesClient {
 
     static final String ENDPOINT = "https://places.googleapis.com/v1/places:searchNearby";
     private static final String PHOTO_BASE_URL = "https://places.googleapis.com/v1/";
+    private static final String PLACE_DETAILS_BASE_URL = "https://places.googleapis.com/v1/places/";
 
     // 요청한 필드만큼만 과금되므로, 지금 쓰는 필드만 정확히 명시한다.
     // photos·businessStatus·currentOpeningHours는 전부 Pro/Enterprise 등급이라, 이미 rating
@@ -126,6 +128,46 @@ public class GooglePlacesClient {
         return parseCandidates(responseJson);
     }
 
+
+    /** 저장된 코스의 placeId를 화면에 표시할 최신 장소 정보로 다시 조회한다. */
+    public PlaceCandidateDTO getDetails(String placeId, long memberId) {
+        PlacesRequestValidator.placeId(placeId);
+        String key = props.places().key();
+        if (key == null || key.isBlank()) {
+            throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
+        }
+
+        quotaService.reserveDetails(memberId);
+
+        String uri = PLACE_DETAILS_BASE_URL + placeId + "?languageCode=ko&regionCode=KR";
+        String responseJson;
+        try {
+            responseJson = restClient.get()
+                    .uri(uri)
+                    .header("X-Goog-Api-Key", key)
+                    .header("X-Goog-FieldMask", FIELD_MASK.replace("places.", ""))
+                    .retrieve()
+                    .body(String.class);
+        } catch (HttpClientErrorException.NotFound e) {
+            // 코스에 저장해 둔 장소가 폐업·삭제된 경우. 일시 장애(503)와 구분해 프론트가 안내할 수 있게 한다.
+            throw new BusinessException("PLACE_NOT_FOUND", "장소 정보를 찾을 수 없습니다. 폐업했거나 삭제된 장소일 수 있습니다.",
+                    HttpStatus.NOT_FOUND);
+        } catch (HttpClientErrorException.BadRequest e) {
+            throw BusinessException.badRequest("placeId 형식이 올바르지 않습니다.");
+        } catch (RestClientException e) {
+            throw unavailable("Google Places 상세 조회에 실패했습니다.");
+        }
+
+        if (responseJson == null || responseJson.isBlank()) {
+            throw unavailable("Google Places 상세 응답이 비어 있습니다.");
+        }
+        try {
+            return parseCandidate(objectMapper.readTree(responseJson));
+        } catch (IOException e) {
+            throw unavailable("Google Places 상세 응답 파싱에 실패했습니다.");
+        }
+    }
+
     /**
      * 검색 결과에 실려온 사진 참조값(photoName)을, 실제로 화면에 띄울 수 있는 이미지 URL로 바꾼다.
      * 후보 전체가 아니라 실제로 보여줄 사진 하나에 대해서만 호출해야 한다(별도 과금 SKU).
@@ -183,42 +225,48 @@ public class GooglePlacesClient {
             }
             List<PlaceCandidateDTO> result = new ArrayList<>();
             for (JsonNode p : places) {
-                String photoName = null;
-                List<PlaceCandidateDTO.AuthorAttribution> photoAttributions = new ArrayList<>();
-                JsonNode photos = p.get("photos");
-                if (photos != null && photos.isArray() && !photos.isEmpty()) {
-                    JsonNode firstPhoto = photos.get(0);
-                    photoName = textOrNull(firstPhoto, "name");
-                    JsonNode attributions = firstPhoto.get("authorAttributions");
-                    if (attributions != null && attributions.isArray() && !attributions.isEmpty()) {
-                        for (JsonNode author : attributions) {
-                            photoAttributions.add(new PlaceCandidateDTO.AuthorAttribution(
-                                    textOrNull(author, "displayName"), textOrNull(author, "uri"), textOrNull(author, "photoUri")));
-                        }
-                    }
-                }
-                Boolean openNow = p.path("currentOpeningHours").hasNonNull("openNow")
-                        ? p.path("currentOpeningHours").get("openNow").asBoolean()
-                        : null;
-                result.add(new PlaceCandidateDTO(
-                        textOrNull(p, "id"),
-                        p.path("displayName").path("text").asText(null),
-                        textOrNull(p, "formattedAddress"),
-                        p.hasNonNull("rating") ? p.get("rating").asDouble() : null,
-                        p.hasNonNull("userRatingCount") ? p.get("userRatingCount").asInt() : null,
-                        p.path("location").hasNonNull("latitude") ? p.path("location").get("latitude").asDouble() : null,
-                        p.path("location").hasNonNull("longitude") ? p.path("location").get("longitude").asDouble() : null,
-                        textOrNull(p, "googleMapsUri"),
-                        photoName,
-                        photoAttributions,
-                        textOrNull(p, "businessStatus"),
-                        openNow, null, null
-                ));
+                result.add(parseCandidate(p));
             }
             return result;
         } catch (IOException e) {
             throw unavailable("Google Places 응답 파싱에 실패했습니다.");
         }
+    }
+
+    private PlaceCandidateDTO parseCandidate(JsonNode p) {
+        String photoName = null;
+        List<PlaceCandidateDTO.AuthorAttribution> photoAttributions = new ArrayList<>();
+        JsonNode photos = p.get("photos");
+        if (photos != null && photos.isArray() && !photos.isEmpty()) {
+            JsonNode firstPhoto = photos.get(0);
+            photoName = textOrNull(firstPhoto, "name");
+            JsonNode attributions = firstPhoto.get("authorAttributions");
+            if (attributions != null && attributions.isArray()) {
+                for (JsonNode author : attributions) {
+                    photoAttributions.add(new PlaceCandidateDTO.AuthorAttribution(
+                            textOrNull(author, "displayName"),
+                            textOrNull(author, "uri"),
+                            textOrNull(author, "photoUri")));
+                }
+            }
+        }
+        Boolean openNow = p.path("currentOpeningHours").hasNonNull("openNow")
+                ? p.path("currentOpeningHours").get("openNow").asBoolean()
+                : null;
+        return new PlaceCandidateDTO(
+                textOrNull(p, "id"),
+                p.path("displayName").path("text").asText(null),
+                textOrNull(p, "formattedAddress"),
+                p.hasNonNull("rating") ? p.get("rating").asDouble() : null,
+                p.hasNonNull("userRatingCount") ? p.get("userRatingCount").asInt() : null,
+                p.path("location").hasNonNull("latitude") ? p.path("location").get("latitude").asDouble() : null,
+                p.path("location").hasNonNull("longitude") ? p.path("location").get("longitude").asDouble() : null,
+                textOrNull(p, "googleMapsUri"),
+                photoName,
+                photoAttributions,
+                textOrNull(p, "businessStatus"),
+                openNow, null, null
+        );
     }
 
     private static String textOrNull(JsonNode node, String field) {

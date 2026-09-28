@@ -24,6 +24,12 @@ public final class PlacesRequestValidator {
         }
     }
 
+    public static void placeId(String placeId) {
+        if (placeId == null || !placeId.matches("[A-Za-z0-9_-]{1,255}")) {
+            throw BusinessException.badRequest("placeId 형식이 올바르지 않습니다.");
+        }
+    }
+
     public static void photo(String name) {
         if (name == null || !name.matches("places/[A-Za-z0-9_-]+/photos/[A-Za-z0-9_-]+")) {
             throw BusinessException.badRequest("name은 places/{placeId}/photos/{photoId} 형식이어야 합니다.");

@@ -55,6 +55,17 @@ public class PlacesController {
                 .body(placesService.recommendBetweenEvents(eventId1, eventId2, type, memberId));
     }
 
+    /** 저장된 코스의 placeId로 최신 이름·주소·영업상태 등을 다시 조회한다. */
+    @GetMapping("/api/places/details")
+    public ResponseEntity<PlaceCandidateDTO> details(
+            @RequestParam String placeId,
+            HttpServletRequest request
+    ) {
+        long memberId = currentMember.requireMember(request).getMemberId();
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(placesService.getDetails(placeId, memberId));
+    }
+
     /**
      * 프론트가 <img src="/api/places/photo?name=..."> 로 바로 쓸 수 있게, 구글 사진 CDN으로 302 리다이렉트한다.
      * API 키는 이 서버 안에서만 쓰이고 프론트·브라우저에는 절대 노출되지 않는다.

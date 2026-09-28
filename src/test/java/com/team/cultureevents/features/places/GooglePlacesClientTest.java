@@ -21,6 +21,7 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.mockito.Mockito.mock;
 
@@ -34,6 +35,7 @@ class GooglePlacesClientTest {
         assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("food"), 500, 20, 1L)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.searchNearby(37.5, 127, List.of("cafe"), 50001, 20, 1L)).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.resolvePhotoUri("places/a/photos/b?key=other", 400, 1L)).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.getDetails("bad/place/id", 1L)).isInstanceOf(BusinessException.class);
         org.mockito.Mockito.verifyNoInteractions(quota);
     }
 
@@ -101,6 +103,29 @@ class GooglePlacesClientTest {
     }
 
     @Test
+    void placeDetailsUsesKoreanRegionAndParsesOnePlace() {
+        var quota = mock(PlacesQuotaService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("https://places.googleapis.com/v1/places/p1?languageCode=ko&regionCode=KR"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {"id":"p1","displayName":{"text":"테스트 카페"},"formattedAddress":"서울 주소",
+                        "rating":4.5,"userRatingCount":100,"location":{"latitude":37.5,"longitude":127.0},
+                        "googleMapsUri":"https://maps.google.com/?cid=1","businessStatus":"OPERATIONAL",
+                        "currentOpeningHours":{"openNow":true}}
+                        """, MediaType.APPLICATION_JSON));
+
+        PlaceCandidateDTO result = new GooglePlacesClient(props("key"), builder.build(), objectMapper, quota)
+                .getDetails("p1", 1L);
+
+        assertThat(result.placeId()).isEqualTo("p1");
+        assertThat(result.name()).isEqualTo("테스트 카페");
+        org.mockito.Mockito.verify(quota).reserveDetails(1L);
+        server.verify();
+    }
+
+    @Test
     void httpFailureIs503() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -112,6 +137,27 @@ class GooglePlacesClientTest {
         assertThatThrownBy(() -> client.searchNearby(37.5, 127.0, List.of("cafe"), 500, 5, 1L))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "PLACES_UNAVAILABLE");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({
+            "NOT_FOUND, PLACE_NOT_FOUND",
+            "BAD_REQUEST, INVALID_PARAM",
+            "TOO_MANY_REQUESTS, PLACES_UNAVAILABLE",
+            "INTERNAL_SERVER_ERROR, PLACES_UNAVAILABLE"
+    })
+    void placeDetailsMapsGoogleErrors(org.springframework.http.HttpStatus googleStatus, String code) {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(containsString("/places/p1"))).andRespond(withStatus(googleStatus));
+
+        GooglePlacesClient client = new GooglePlacesClient(
+                props("key"), builder.build(), objectMapper, mock(PlacesQuotaService.class));
+
+        assertThatThrownBy(() -> client.getDetails("p1", 1L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("code", code);
+        server.verify();
     }
 
     @Test

@@ -6,6 +6,7 @@ import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.commons.handler.GlobalExceptionHandler;
 import com.team.cultureevents.features.events.service.EventService;
 import com.team.cultureevents.features.places.ctrl.PlacesController;
+import com.team.cultureevents.features.places.domain.dto.PlaceCandidateDTO;
 import com.team.cultureevents.features.places.service.PlacesService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,7 +35,7 @@ class PlacesControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {
             "/api/places/nearby", "/api/places/nearby?latitude=37.5",
-            "/api/places/between?eventId1=a&eventId2=b", "/api/places/photo",
+            "/api/places/between?eventId1=a&eventId2=b", "/api/places/photo", "/api/places/details",
             "/api/places/nearby?latitude=abc&longitude=127",
             "/api/places/nearby?latitude=NaN&longitude=127",
             "/api/places/nearby?latitude=37.5&longitude=Infinity",
@@ -42,6 +43,7 @@ class PlacesControllerTest {
             "/api/places/nearby?latitude=37.5&longitude=127&radius=50001",
             "/api/places/nearby?latitude=37.5&longitude=127&types=food",
             "/api/places/between?eventId1=a&eventId2=b&type=bar",
+            "/api/places/details?placeId=bad%2Fplace",
             "/api/places/photo?name=places/a/photos/b/media",
             "/api/places/photo?name=places/a/photos/b%3Fx=1"
     })
@@ -62,11 +64,23 @@ class PlacesControllerTest {
         for (String path : java.util.List.of(
                 "/api/places/nearby?latitude=37.5&longitude=127",
                 "/api/places/between?eventId1=a&eventId2=b&type=cafe",
-                "/api/places/photo?name=places/a/photos/b")) {
+                "/api/places/photo?name=places/a/photos/b",
+                "/api/places/details?placeId=p1")) {
             authMvc.perform(get(path))
                     .andExpect(status().isUnauthorized())
                     .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
         }
         verifyNoInteractions(places);
+    }
+
+    @Test
+    void placeDetailsUsesMemberForQuota() throws Exception {
+        PlaceCandidateDTO detail = mock(PlaceCandidateDTO.class);
+        when(client.getDetails("p1", 1L)).thenReturn(detail);
+
+        mvc.perform(get("/api/places/details").param("placeId", "p1"))
+                .andExpect(status().isOk());
+
+        verify(client).getDetails("p1", 1L);
     }
 }
