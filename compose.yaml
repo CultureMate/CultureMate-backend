@@ -1,0 +1,25 @@
+name: culturemate
+
+services:
+  db:
+    # Spring Boot 3.3의 Flyway가 지원하는 LTS 버전
+    image: mariadb:10.11
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-culturemate}
+      MARIADB_USER: ${DB_USERNAME:-culturemate}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD를 .env에 넣어 주세요}
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+    ports:
+      # PC에 설치된 MariaDB/MySQL(3306)과 겹치지 않게 기본값을 3308로 둔다.
+      - "${DB_PORT:-3308}:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:

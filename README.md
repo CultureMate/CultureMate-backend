@@ -54,6 +54,22 @@ macOS/Linux는 `./mvnw spring-boot:run` 입니다. 터미널만 있어도 됩니
 
 키가 비면 목록은 `502`, 카카오 시작은 `503`입니다. `.env` · `data/` · `target/` 은 Git에 올리지 않습니다.
 
+### 🐬 MariaDB로 실행 (docker 프로필)
+
+기본 실행은 위처럼 H2입니다. MariaDB는 Docker로 띄우고 `docker` 프로필일 때만 씁니다.
+
+```bash
+docker compose up -d db
+.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=docker"
+```
+
+`.env`에 `DB_PASSWORD`가 있어야 합니다. 테이블은 Flyway(`src/main/resources/db/migration`)가 만들고, Hibernate는 `validate`로 검사만 합니다.
+엔티티를 바꾸면 기존 SQL은 고치지 말고 `V2__설명.sql`처럼 다음 버전 파일을 함께 추가합니다. 로컬 H2는 그대로 돌아가도 MariaDB에서는 서버가 뜨지 않습니다.
+
+- DB 도구 접속(HeidiSQL 등): `MariaDB or MySQL (TCP/IP)` / `127.0.0.1:3308` / DB `culturemate` / 사용자 `culturemate` / 암호 `DB_PASSWORD`
+- PC에 설치된 MariaDB·MySQL이 3306을 쓰는 경우가 많아 기본 포트를 `3308`로 뒀습니다. 바꾸려면 `.env`의 `DB_PORT`를 고칩니다.
+- 끄기: `docker compose down` (데이터 유지) · 초기화: `docker compose down -v`
+
 <br>
 
 ## 🧪 테스트

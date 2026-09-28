@@ -3,7 +3,6 @@ package com.team.cultureevents.features.summary.domain.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -17,8 +16,8 @@ public class AiSummaryEntity {
     @Column(name = "event_id", length = 512)
     private String eventId;
 
-    @Lob
-    @Column(nullable = false)
+    // @Lob만 두면 MariaDB에서 tinytext(255바이트)로 잡혀 긴 소개문이 저장되지 않는다.
+    @Column(nullable = false, columnDefinition = "text")
     private String summary;
 
     @Column(name = "created_at", nullable = false)

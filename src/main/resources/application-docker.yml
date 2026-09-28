@@ -1,0 +1,16 @@
+# SPRING_PROFILES_ACTIVE=docker 일 때 application.yml 위에 덮어쓴다.
+# 기본값은 PC에서 compose의 db 컨테이너(localhost:3308)에 붙는 경우. compose 안에서는 DB_URL로 db:3306을 넘긴다.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mariadb://localhost:${DB_PORT:3308}/${DB_NAME:culturemate}}
+    driver-class-name: org.mariadb.jdbc.Driver
+    username: ${DB_USERNAME:culturemate}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+  h2:
+    console:
+      enabled: false
