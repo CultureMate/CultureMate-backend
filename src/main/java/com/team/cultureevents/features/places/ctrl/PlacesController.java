@@ -1,7 +1,9 @@
 package com.team.cultureevents.features.places.ctrl;
 
+import com.team.cultureevents.features.auth.service.CurrentMemberService;
 import com.team.cultureevents.features.places.domain.dto.PlaceCandidateDTO;
 import com.team.cultureevents.features.places.service.PlacesService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,9 +17,11 @@ import java.util.List;
 public class PlacesController {
 
     private final PlacesService placesService;
+    private final CurrentMemberService currentMember;
 
-    public PlacesController(PlacesService placesService) {
+    public PlacesController(PlacesService placesService, CurrentMemberService currentMember) {
         this.placesService = placesService;
+        this.currentMember = currentMember;
     }
 
     @GetMapping("/api/places/nearby")
@@ -26,10 +30,12 @@ public class PlacesController {
             @RequestParam Double longitude,
             @RequestParam(required = false) List<String> types,
             @RequestParam(required = false) Integer radius,
-            @RequestParam(required = false) Integer maxResults
+            @RequestParam(required = false) Integer maxResults,
+            HttpServletRequest request
     ) {
+        long memberId = currentMember.requireMember(request).getMemberId();
         return ResponseEntity.status(HttpStatus.OK)
-                .body(placesService.recommendNearby(latitude, longitude, types, radius, maxResults));
+                .body(placesService.recommendNearby(latitude, longitude, types, radius, maxResults, memberId));
     }
 
     /**
@@ -41,16 +47,22 @@ public class PlacesController {
     public ResponseEntity<List<PlaceCandidateDTO>> between(
             @RequestParam String eventId1,
             @RequestParam String eventId2,
-            @RequestParam String type
+            @RequestParam String type,
+            HttpServletRequest request
     ) {
+        long memberId = currentMember.requireMember(request).getMemberId();
         return ResponseEntity.status(HttpStatus.OK)
-                .body(placesService.recommendBetweenEvents(eventId1, eventId2, type));
+                .body(placesService.recommendBetweenEvents(eventId1, eventId2, type, memberId));
     }
 
     /** 저장된 코스의 placeId로 최신 이름·주소·영업상태 등을 다시 조회한다. */
     @GetMapping("/api/places/details")
-    public ResponseEntity<PlaceCandidateDTO> details(@RequestParam String placeId) {
-        return ResponseEntity.status(HttpStatus.OK).body(placesService.getDetails(placeId));
+    public ResponseEntity<PlaceCandidateDTO> details(
+            @RequestParam String placeId,
+            HttpServletRequest request
+    ) {
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(placesService.getDetails(placeId, request.getRemoteAddr()));
     }
 
     /**
@@ -60,9 +72,11 @@ public class PlacesController {
     @GetMapping("/api/places/photo")
     public ResponseEntity<Void> photo(
             @RequestParam String name,
-            @RequestParam(required = false) Integer maxWidthPx
+            @RequestParam(required = false) Integer maxWidthPx,
+            HttpServletRequest request
     ) {
-        String photoUri = placesService.resolvePhotoUri(name, maxWidthPx);
+        long memberId = currentMember.requireMember(request).getMemberId();
+        String photoUri = placesService.resolvePhotoUri(name, maxWidthPx, memberId);
         return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(photoUri)).build();
     }
 }

@@ -86,7 +86,7 @@ public class GooglePlacesClient {
      */
     public List<PlaceCandidateDTO> searchNearby(double latitude, double longitude,
                                                  List<String> includedTypes,
-                                                 int radiusMeters, int maxResults) {
+                                                  int radiusMeters, int maxResults, long memberId) {
         PlacesRequestValidator.nearby(latitude, longitude, includedTypes, radiusMeters);
         if (maxResults < 1 || maxResults > 20) throw BusinessException.badRequest("maxResults는 1~20이어야 합니다.");
         String key = props.places().key();
@@ -94,7 +94,7 @@ public class GooglePlacesClient {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
         }
 
-        quotaService.reserve(false);
+        quotaService.reserve(false, memberId);
 
         Map<String, Object> body = Map.of(
                 "includedTypes", includedTypes,
@@ -129,14 +129,14 @@ public class GooglePlacesClient {
 
 
     /** 저장된 코스의 placeId를 화면에 표시할 최신 장소 정보로 다시 조회한다. */
-    public PlaceCandidateDTO getDetails(String placeId) {
+    public PlaceCandidateDTO getDetails(String placeId, String clientIdentity) {
         PlacesRequestValidator.placeId(placeId);
         String key = props.places().key();
         if (key == null || key.isBlank()) {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
         }
 
-        quotaService.reserveDetails();
+        quotaService.reserveDetails(clientIdentity);
 
         String uri = PLACE_DETAILS_BASE_URL + placeId + "?languageCode=ko&regionCode=KR";
         String responseJson;
@@ -169,7 +169,7 @@ public class GooglePlacesClient {
      * @param maxWidthPx 원하는 이미지 최대 가로 픽셀
      * @return 브라우저가 바로 로드할 수 있는 이미지 URL(구글 CDN, API 키 안 들어있음)
      */
-    public String resolvePhotoUri(String photoName, int maxWidthPx) {
+    public String resolvePhotoUri(String photoName, int maxWidthPx, long memberId) {
         PlacesRequestValidator.photo(photoName);
         if (maxWidthPx < 1 || maxWidthPx > 1600) throw BusinessException.badRequest("maxWidthPx는 1~1600이어야 합니다.");
         String key = props.places().key();
@@ -177,7 +177,7 @@ public class GooglePlacesClient {
             throw unavailable("GOOGLE_PLACES_API_KEY가 설정되지 않았습니다.");
         }
 
-        quotaService.reserve(true);
+        quotaService.reserve(true, memberId);
 
         // skipHttpRedirect=true로 요청하면 구글이 이미지 대신 photoUri가 담긴 JSON을 돌려준다.
         // 이 photoUri는 API 키가 안 들어있는 순수 CDN 링크라, 프론트에 그대로 넘겨도 안전하다.

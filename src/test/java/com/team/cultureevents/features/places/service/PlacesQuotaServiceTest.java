@@ -24,7 +24,14 @@ class PlacesQuotaServiceTest {
     LocalDate today = LocalDate.of(2026, 9, 15);
 
     PlacesQuotaService service(int monthly, int rate) {
-        return new PlacesQuotaService(daily, buckets, manager, monthly, monthly, rate, rate, clock);
+        return service(monthly, rate, 100);
+    }
+    PlacesQuotaService service(int monthly, int rate, int memberDaily) {
+        return new PlacesQuotaService(daily, buckets, manager,
+                monthly, monthly, monthly,
+                rate, rate, rate,
+                memberDaily, memberDaily, memberDaily,
+                clock);
     }
     @BeforeEach void clean() { daily.deleteAll(); buckets.deleteAll(); }
 
@@ -88,7 +95,10 @@ class PlacesQuotaServiceTest {
 
     @Test void detailQuotaIsIndependentFromSearchAndPhoto() {
         var svc = new PlacesQuotaService(daily, buckets, manager,
-                900, 900, 900, 100, 100, 1, clock);
+                900, 900, 900,
+                100, 100, 1,
+                100, 100, 1,
+                clock);
         svc.reserveDetails("a");
         assertThatThrownBy(() -> svc.reserveDetails("a"))
                 .hasFieldOrPropertyWithValue("code", "PLACES_RATE_LIMITED");
@@ -96,6 +106,21 @@ class PlacesQuotaServiceTest {
         assertThat(stored.getCallCount()).isZero();
         assertThat(stored.getPhotoCallCount()).isZero();
         assertThat(stored.getDetailCallCount()).isEqualTo(1);
+    }
+
+    @Test void detailDailyLimitDoesNotAffectOtherClients() {
+        var svc = new PlacesQuotaService(daily, buckets, manager,
+                900, 900, 900,
+                100, 100, 100,
+                100, 100, 2,
+                clock);
+        svc.reserveDetails("client-a");
+        svc.reserveDetails("client-a");
+        assertThatThrownBy(() -> svc.reserveDetails("client-a"))
+                .hasFieldOrPropertyWithValue("code", "PLACES_CLIENT_DAILY_LIMITED");
+
+        svc.reserveDetails("client-b");
+        assertThat(daily.findById(today).orElseThrow().getDetailCallCount()).isEqualTo(3);
     }
 
     @Test void dailyCapsRemainIndependent() {
@@ -108,32 +133,78 @@ class PlacesQuotaServiceTest {
         }
     }
 
-    @Test void minuteWindowResetsAndIpComesFromRequestNotForwardedHeader() {
-        var request = new org.springframework.mock.web.MockHttpServletRequest();
-        request.setRemoteAddr("192.0.2.1");
-        request.addHeader("X-Forwarded-For", "spoofed");
-        org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
-                new org.springframework.web.context.request.ServletRequestAttributes(request));
+    @Test void memberDailyLimitDoesNotAffectOtherMembers() {
+        service(900, 100, 2).reserve(false, "member-1");
+        service(900, 100, 2).reserve(false, "member-1");
+        assertThatThrownBy(() -> service(900, 100, 2).reserve(false, "member-1"))
+                .hasFieldOrPropertyWithValue("code", "PLACES_MEMBER_DAILY_LIMITED");
+
+        service(900, 100, 2).reserve(false, "member-2");
+        assertThat(daily.findById(today).orElseThrow().getCallCount()).isEqualTo(3);
+
+        var nextDay = new PlacesQuotaService(daily, buckets, manager,
+                900, 900, 900,
+                100, 100, 100,
+                2, 2, 2,
+                Clock.offset(clock, Duration.ofDays(1)));
+        nextDay.reserve(false, "member-1");
+        assertThat(daily.findById(today.plusDays(1)).orElseThrow().getCallCount()).isEqualTo(1);
+    }
+
+    @Test void concurrentRequestsCannotExceedMemberDailyLimit() throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(8);
+        CountDownLatch start = new CountDownLatch(1);
         try {
-            service(900, 1).reserve(false);
-            request.removeHeader("X-Forwarded-For");
-            request.addHeader("X-Forwarded-For", "different");
-            assertThatThrownBy(() -> service(900, 1).reserve(false))
-                    .hasFieldOrPropertyWithValue("code", "PLACES_RATE_LIMITED");
-            var later = new PlacesQuotaService(daily, buckets, manager, 900, 900, 1, 1,
-                    Clock.offset(clock, Duration.ofMinutes(1)));
-            later.reserve(false);
-            assertThat(daily.findById(today).orElseThrow().getCallCount()).isEqualTo(2);
-        } finally { org.springframework.web.context.request.RequestContextHolder.resetRequestAttributes(); }
+            List<Future<Boolean>> results = new ArrayList<>();
+            for (int i = 0; i < 16; i++) {
+                results.add(executor.submit(() -> {
+                    start.await();
+                    try {
+                        service(900, 100, 3).reserve(false, "same-member");
+                        return true;
+                    } catch (BusinessException ex) {
+                        assertThat(ex.getCode()).isEqualTo("PLACES_MEMBER_DAILY_LIMITED");
+                        return false;
+                    }
+                }));
+            }
+            start.countDown();
+            int success = 0;
+            for (var result : results) if (result.get(30, TimeUnit.SECONDS)) success++;
+            assertThat(success).isEqualTo(3);
+            assertThat(daily.findById(today).orElseThrow().getCallCount()).isEqualTo(3);
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    @Test void minuteWindowResetsForSameMember() {
+        service(900, 1).reserve(false, "member-1");
+        assertThatThrownBy(() -> service(900, 1).reserve(false, "member-1"))
+                .hasFieldOrPropertyWithValue("code", "PLACES_RATE_LIMITED");
+        var later = new PlacesQuotaService(daily, buckets, manager,
+                900, 900, 900,
+                1, 1, 1,
+                100, 100, 100,
+                Clock.offset(clock, Duration.ofMinutes(1)));
+        later.reserve(false, "member-1");
+        assertThat(daily.findById(today).orElseThrow().getCallCount()).isEqualTo(2);
     }
 
     @Test void billingMonthResetsAtPacificMidnight() {
         daily.save(new PlacesApiUsageEntity(LocalDate.of(2026, 9, 30), 1, 1));
         Clock before = Clock.fixed(Instant.parse("2026-10-01T06:59:59Z"), clock.getZone());
-        var beforeReset = new PlacesQuotaService(daily, buckets, manager, 1, 1, 100, 100, before);
+        var beforeReset = new PlacesQuotaService(daily, buckets, manager,
+                1, 1, 1,
+                100, 100, 100,
+                100, 100, 100,
+                before);
         assertThatThrownBy(() -> beforeReset.reserve(false, "a"))
                 .hasFieldOrPropertyWithValue("code", "PLACES_QUOTA_EXCEEDED");
-        var afterReset = new PlacesQuotaService(daily, buckets, manager, 1, 1, 100, 100,
+        var afterReset = new PlacesQuotaService(daily, buckets, manager,
+                1, 1, 1,
+                100, 100, 100,
+                100, 100, 100,
                 Clock.offset(before, Duration.ofSeconds(1)));
         afterReset.reserve(false, "a");
         assertThat(daily.findById(LocalDate.of(2026, 10, 1)).orElseThrow().getCallCount()).isEqualTo(1);

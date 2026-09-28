@@ -30,9 +30,9 @@ class PlacesServiceTest {
         PlaceCandidateDTO better = located("better", 4.9, 37.503, 127.01);
         PlaceCandidateDTO equalFarther = located("farther", 4.9, 37.506, 127.01);
         PlaceCandidateDTO excluded = located("excluded", 5.0, 37.6, 127.01);
-        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20)))
+        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20), eq(1L)))
                 .thenReturn(List.of(onRoute, equalFarther, excluded, better));
-        var result = service.recommendBetweenEvents("a", "b", "cafe");
+        var result = service.recommendBetweenEvents("a", "b", "cafe", 1L);
         assertEquals(List.of("better", "farther", "on"), result.stream().map(PlaceCandidateDTO::name).toList());
         double direct = PlacesService.haversineMeters(37.5, 127, 37.5, 127.02);
         for (var p : result) {
@@ -47,9 +47,9 @@ class PlacesServiceTest {
     void coincidentEventsHaveFiniteScoresAnd300MeterDetourCap() {
         when(eventService.getDetail("a")).thenReturn(eventAt("a", 37.5, 127));
         when(eventService.getDetail("b")).thenReturn(eventAt("b", 37.5, 127));
-        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20)))
+        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20), eq(1L)))
                 .thenReturn(List.of(located("near", 4.5, 37.5001, 127), located("far", 5, 37.51, 127)));
-        var result = service.recommendBetweenEvents("a", "b", "cafe");
+        var result = service.recommendBetweenEvents("a", "b", "cafe", 1L);
         assertEquals(1, result.size());
         assertTrue(result.get(0).detourMeters() <= 300);
         assertTrue(Double.isFinite(result.get(0).recommendationScore()));
@@ -79,29 +79,29 @@ class PlacesServiceTest {
 
     @Test
     void missingCoordinatesIsBadRequest() {
-        assertThrows(BusinessException.class, () -> service.recommendNearby(null, 127.0, null, null, null));
-        assertThrows(BusinessException.class, () -> service.recommendNearby(37.5, null, null, null, null));
+        assertThrows(BusinessException.class, () -> service.recommendNearby(null, 127.0, null, null, null, 1L));
+        assertThrows(BusinessException.class, () -> service.recommendNearby(37.5, null, null, null, null, 1L));
     }
 
     @Test
     void outOfKoreaRangeIsBadRequest() {
-        assertThrows(BusinessException.class, () -> service.recommendNearby(10.0, 127.0, null, null, null));
-        assertThrows(BusinessException.class, () -> service.recommendNearby(37.5, 200.0, null, null, null));
+        assertThrows(BusinessException.class, () -> service.recommendNearby(10.0, 127.0, null, null, null, 1L));
+        assertThrows(BusinessException.class, () -> service.recommendNearby(37.5, 200.0, null, null, null, 1L));
     }
 
     @Test
     void alwaysRequestsFullPoolFromGoogleRegardlessOfMaxResults() {
-        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant")), eq(300), eq(20)))
+        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant")), eq(300), eq(20), eq(1L)))
                 .thenReturn(List.of());
 
-        service.recommendNearby(37.5, 127.0, List.of("restaurant"), 300, 3);
+        service.recommendNearby(37.5, 127.0, List.of("restaurant"), 300, 3, 1L);
 
-        verify(placesClient).searchNearby(37.5, 127.0, List.of("restaurant"), 300, 20);
+        verify(placesClient).searchNearby(37.5, 127.0, List.of("restaurant"), 300, 20, 1L);
     }
 
     @Test
     void sortsByBayesianScoreAndAppliesMinimumReviewFloor() {
-        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant", "cafe")), eq(500), eq(20)))
+        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant", "cafe")), eq(500), eq(20), eq(1L)))
                 .thenReturn(List.of(
                         candidate("리뷰적은고평점", 5.0, 2),     // 리뷰 5개 미만 -> 제외
                         candidate("평점없음", null, 100),         // 평점 없음 -> 제외
@@ -110,7 +110,7 @@ class PlacesServiceTest {
                         candidate("3등", 4.2, 50)
                 ));
 
-        List<PlaceCandidateDTO> result = service.recommendNearby(37.5, 127.0, null, null, null);
+        List<PlaceCandidateDTO> result = service.recommendNearby(37.5, 127.0, null, null, null, 1L);
 
         assertEquals(3, result.size());
         assertEquals("1등", result.get(0).name());
@@ -120,14 +120,14 @@ class PlacesServiceTest {
 
     @Test
     void filtersOutPermanentlyOrTemporarilyClosedPlaces() {
-        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant", "cafe")), eq(500), eq(20)))
+        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant", "cafe")), eq(500), eq(20), eq(1L)))
                 .thenReturn(List.of(
                         candidate("영구폐업", 4.9, 500, "CLOSED_PERMANENTLY"),
                         candidate("임시휴업", 4.9, 500, "CLOSED_TEMPORARILY"),
                         candidate("정상영업", 4.0, 50, "OPERATIONAL")
                 ));
 
-        List<PlaceCandidateDTO> result = service.recommendNearby(37.5, 127.0, null, null, null);
+        List<PlaceCandidateDTO> result = service.recommendNearby(37.5, 127.0, null, null, null, 1L);
 
         assertEquals(1, result.size());
         assertEquals("정상영업", result.get(0).name());
@@ -135,14 +135,14 @@ class PlacesServiceTest {
 
     @Test
     void limitsReturnedResultsToRequestedMaxResults() {
-        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant", "cafe")), eq(500), eq(20)))
+        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("restaurant", "cafe")), eq(500), eq(20), eq(1L)))
                 .thenReturn(List.of(
                         candidate("가", 4.9, 100),
                         candidate("나", 4.8, 100),
                         candidate("다", 4.7, 100)
                 ));
 
-        List<PlaceCandidateDTO> result = service.recommendNearby(37.5, 127.0, null, null, 2);
+        List<PlaceCandidateDTO> result = service.recommendNearby(37.5, 127.0, null, null, 2, 1L);
 
         assertEquals(2, result.size());
     }
@@ -153,17 +153,17 @@ class PlacesServiceTest {
     void recommendBetweenEventsUsesMidpointAndHalfDistanceAsRadius() {
         when(eventService.getDetail("e1")).thenReturn(eventAt("e1", 37.0, 127.0));
         when(eventService.getDetail("e2")).thenReturn(eventAt("e2", 37.0, 127.02));
-        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20)))
+        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20), eq(1L)))
                 .thenReturn(List.of());
 
-        service.recommendBetweenEvents("e1", "e2", "cafe");
+        service.recommendBetweenEvents("e1", "e2", "cafe", 1L);
 
         double expectedDistance = PlacesService.haversineMeters(37.0, 127.0, 37.0, 127.02);
         int expectedRadius = (int) Math.round(expectedDistance / 2);
 
         ArgumentCaptor<Double> lat = ArgumentCaptor.forClass(Double.class);
         ArgumentCaptor<Double> lng = ArgumentCaptor.forClass(Double.class);
-        verify(placesClient).searchNearby(lat.capture(), lng.capture(), eq(List.of("cafe")), eq(expectedRadius), eq(20));
+        verify(placesClient).searchNearby(lat.capture(), lng.capture(), eq(List.of("cafe")), eq(expectedRadius), eq(20), eq(1L));
 
         // double은 이진 부동소수점이라 (127.0 + 127.02) / 2 가 정확히 127.01이 아니라
         // 127.00999999999999로 나온다. 좌표는 오차 허용 범위로 비교한다.
@@ -177,12 +177,12 @@ class PlacesServiceTest {
         when(eventService.getDetail("e2")).thenReturn(new EventDetailResponseDTO(
                 "e2", "제목", "분류", "구", "장소", "2026-01-01", "2026-01-02", "", "", "", "", 0));
 
-        assertThrows(BusinessException.class, () -> service.recommendBetweenEvents("e1", "e2", "cafe"));
+        assertThrows(BusinessException.class, () -> service.recommendBetweenEvents("e1", "e2", "cafe", 1L));
     }
 
     @Test
     void recommendBetweenEventsRequiresType() {
-        assertThrows(BusinessException.class, () -> service.recommendBetweenEvents("e1", "e2", null));
+        assertThrows(BusinessException.class, () -> service.recommendBetweenEvents("e1", "e2", null, 1L));
     }
 
     @Test
@@ -215,15 +215,15 @@ class PlacesServiceTest {
 
     @Test
     void resolvePhotoUriRequiresName() {
-        assertThrows(BusinessException.class, () -> service.resolvePhotoUri(null, 400));
-        assertThrows(BusinessException.class, () -> service.resolvePhotoUri("  ", 400));
+        assertThrows(BusinessException.class, () -> service.resolvePhotoUri(null, 400, 1L));
+        assertThrows(BusinessException.class, () -> service.resolvePhotoUri("  ", 400, 1L));
     }
 
     @Test
     void resolvePhotoUriDelegatesToClientWithDefaultWidth() {
-        when(placesClient.resolvePhotoUri("places/p1/photos/abc", 400)).thenReturn("https://lh3.googleusercontent.com/abc");
+        when(placesClient.resolvePhotoUri("places/p1/photos/abc", 400, 1L)).thenReturn("https://lh3.googleusercontent.com/abc");
 
-        String uri = service.resolvePhotoUri("places/p1/photos/abc", null);
+        String uri = service.resolvePhotoUri("places/p1/photos/abc", null, 1L);
 
         assertEquals("https://lh3.googleusercontent.com/abc", uri);
     }
