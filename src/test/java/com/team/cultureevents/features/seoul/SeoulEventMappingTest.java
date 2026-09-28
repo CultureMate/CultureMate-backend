@@ -59,7 +59,7 @@ class SeoulEventMappingTest {
         server.expect(requestTo("http://seoul.test/key/json/culturalEventInfo/1/3/"))
                 .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
         AppProperties props = new AppProperties(null,
-                new AppProperties.SeoulApi("key", "http://seoul.test", 30, 3), null, null, "http://localhost:5175");
+                new AppProperties.SeoulApi("key", "http://seoul.test", 30, 3), null, null, null, "http://localhost:5175");
         SeoulOpenApiClient client = new SeoulOpenApiClient(props, builder, new ObjectMapper());
 
         var events = client.fetchAll();

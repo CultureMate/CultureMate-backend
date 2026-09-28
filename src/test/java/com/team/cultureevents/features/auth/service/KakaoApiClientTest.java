@@ -25,7 +25,7 @@ class KakaoApiClientTest {
                         .body("{\"error\":\"invalid_client\",\"error_code\":\"KOE010\"}"));
         AppProperties props = new AppProperties(null, null, null,
                 new AppProperties.Kakao("test-key", "test-secret", "http://localhost:8080/api/auth/kakao/callback"),
-                "http://localhost:5175");
+                null, "http://localhost:5175");
         KakaoApiClient client = new KakaoApiClient(props, builder, new ObjectMapper());
 
         assertThatThrownBy(() -> client.fetchProfile("fake-code"))
