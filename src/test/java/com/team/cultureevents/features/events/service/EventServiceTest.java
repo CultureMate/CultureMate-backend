@@ -140,6 +140,36 @@ class EventServiceTest {
         assertEquals(null, service.getDetail("id-1").summary());
     }
 
+    @Test
+    void listIncludesSavedViewCountAndDefaultsToZeroWithoutIncrementing() {
+        when(cache.getIfFresh()).thenReturn(List.of(event("viewed", "전시"), event("new", "공연")));
+        when(eventViewRepository.findAll()).thenReturn(List.of(new EventViewEntity("viewed", 17)));
+
+        var result = service.list(List.of(), List.of(), List.of(), null, null, null, 0, 20);
+
+        assertEquals(17, result.events().stream()
+                .filter(event -> event.eventId().equals("viewed"))
+                .findFirst().orElseThrow().viewCount());
+        assertEquals(0, result.events().stream()
+                .filter(event -> event.eventId().equals("new"))
+                .findFirst().orElseThrow().viewCount());
+    }
+
+    @Test
+    void listIncludesViewCountsStoredUnderMergedAliases() {
+        SeoulEvent merged = new SeoulEvent("canonical", "합쳐진 행사", "전시", "중구", "DDP",
+                "2026-10-01", "2026-10-20", "", "", "", "", null, null,
+                List.of("alias"));
+        when(cache.getIfFresh()).thenReturn(List.of(merged));
+        when(eventViewRepository.findAll()).thenReturn(List.of(
+                new EventViewEntity("canonical", 1),
+                new EventViewEntity("alias", 50)));
+
+        var result = service.list(List.of(), List.of(), List.of(), null, null, null, 0, 20);
+
+        assertEquals(51, result.events().get(0).viewCount());
+    }
+
     private static SeoulEvent event(String id, String category) {
         return new SeoulEvent(id, "테스트 행사", category, "마포구", "장소", "2026-10-10",
                 "2026-10-12", "무료", "서울시", id, "");

@@ -10,6 +10,7 @@ public record EventSummaryResponseDTO(
         String endDate,
         String imageUrl,
         Double latitude,
-        Double longitude
+        Double longitude,
+        Integer viewCount
 ) {
 }

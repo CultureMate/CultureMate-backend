@@ -11,6 +11,7 @@ import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
 import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
 import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
+import com.team.cultureevents.features.views.domain.entity.EventViewEntity;
 import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.springframework.stereotype.Service;
 
@@ -20,8 +21,10 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 public class EventService {
@@ -75,18 +78,19 @@ public class EventService {
                         Comparator.nullsLast(Comparator.naturalOrder())
                 ).thenComparing(SeoulEvent::title, Comparator.nullsLast(String::compareTo)))
                 .toList();
+        Map<String, Integer> viewCounts = viewCountMap();
 
         boolean paged = page != null || size != null;
         if (!paged) {
             return new EventListResponseDTO(filtered.size(), filtered.size(), null, null,
-                    filtered.stream().map(this::toSummary).toList());
+                    filtered.stream().map(event -> toSummary(event, viewCounts)).toList());
         }
         int actualPage = page == null ? 0 : page;
         int actualSize = size == null ? 20 : size;
         long first = (long) actualPage * actualSize;
         List<EventSummaryResponseDTO> items = first >= filtered.size() ? List.of()
                 : filtered.subList((int) first, Math.min(filtered.size(), (int) first + actualSize))
-                .stream().map(this::toSummary).toList();
+                .stream().map(event -> toSummary(event, viewCounts)).toList();
         return new EventListResponseDTO(items.size(), filtered.size(), actualPage, actualSize, items);
     }
 
@@ -125,13 +129,31 @@ public class EventService {
         return fresh;
     }
 
-    private EventSummaryResponseDTO toSummary(SeoulEvent e) {
+    private EventSummaryResponseDTO toSummary(SeoulEvent e, Map<String, Integer> viewCounts) {
         boolean invalidPeriod = EventDates.inverted(e.startDate(), e.endDate());
         return new EventSummaryResponseDTO(
                 e.eventId(), e.title(), e.category(), e.district(),
                 e.place(), invalidPeriod ? "" : e.startDate(), invalidPeriod ? "" : e.endDate(),
-                emptyToBlank(e.imageUrl()), e.latitude(), e.longitude()
+                emptyToBlank(e.imageUrl()), e.latitude(), e.longitude(),
+                viewCount(e, viewCounts)
         );
+    }
+
+    private static int viewCount(SeoulEvent event, Map<String, Integer> viewCounts) {
+        int total = viewCounts.getOrDefault(event.eventId(), 0);
+        for (String aliasId : event.aliasIds()) {
+            total += viewCounts.getOrDefault(aliasId, 0);
+        }
+        return total;
+    }
+
+    private Map<String, Integer> viewCountMap() {
+        return eventViewRepository.findAll().stream()
+                .collect(Collectors.toMap(
+                        EventViewEntity::getEventId,
+                        EventViewEntity::getViewCount,
+                        Integer::max
+                ));
     }
 
     private EventDetailResponseDTO toDetail(SeoulEvent e) {
