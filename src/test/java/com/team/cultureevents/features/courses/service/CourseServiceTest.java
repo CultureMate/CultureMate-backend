@@ -1,5 +1,7 @@
 package com.team.cultureevents.features.courses.service;
 
+import com.team.cultureevents.features.auth.domain.entity.MemberEntity;
+import com.team.cultureevents.features.auth.repository.MemberRepository;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.courses.domain.dto.CourseCreateRequestDTO;
 import com.team.cultureevents.features.courses.domain.dto.CourseFavoriteRequestDTO;
@@ -28,7 +30,12 @@ class CourseServiceTest {
 
     private final CourseRepository courses = mock(CourseRepository.class);
     private final EventService events = mock(EventService.class);
-    private final CourseService service = new CourseService(courses, events);
+    private final MemberRepository members = mock(MemberRepository.class);
+    private final CourseService service = new CourseService(courses, events, members);
+
+    CourseServiceTest() {
+        when(members.findByIdForUpdate(7L)).thenReturn(Optional.of(new MemberEntity("kakao-7", "회원")));
+    }
 
     @Test
     void createStoresEventSnapshotAndOnlyPlaceIdForPlaceStop() {
@@ -78,6 +85,7 @@ class CourseServiceTest {
                 "51번째", List.of(new CourseStopRequestDTO("event", "event-1", null)))))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("code", "COURSE_LIMIT_EXCEEDED");
+        verify(members).findByIdForUpdate(7L);
         verify(courses, never()).save(any());
     }
 

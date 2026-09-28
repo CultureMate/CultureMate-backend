@@ -25,6 +25,7 @@
 | `AUTH_NOT_CONFIGURED` | 503 | `KAKAO_REST_KEY` 없음 |
 | `AI_UNAVAILABLE` | 503 | AI 소개문 생성 실패 |
 | `PLACES_UNAVAILABLE` | 503 | Google Places 조회 실패(키 미설정 포함) |
+| `PLACE_NOT_FOUND` | 404 | 장소 상세 조회 시 Google에 해당 장소가 없음(폐업·삭제 등). 코스 화면에서 "없어진 장소"로 안내 |
 | `PLACES_RATE_LIMITED` | 429 | 같은 회원의 Places 1분 호출 한도 초과(검색 20회·사진 40회·상세 20회). 약 1분 뒤 재시도 |
 | `PLACES_MEMBER_DAILY_LIMITED` | 429 | 같은 회원의 Places 일일 호출 한도 초과(기본 검색·사진·상세 각 20회) |
 | `PLACES_QUOTA_EXCEEDED` | 503 | 서버 전체 Places 일일(검색 80·사진 60·상세 80) 또는 월간(각 900) 한도 초과 |
@@ -366,6 +367,10 @@ GET /api/places/details?placeId=ChIJ...
 이 호출은 검색·사진과 별도의 상세 조회 호출량을 사용하며, 같은 회원 기준 하루 20회까지입니다. 저장된 코스
 카드 여러 개의 장소 정보를 한꺼번에 미리 요청하지 말고, 실제 상세 화면에서 필요한 스탑만 조회하세요. 같은
 화면에서 이미 받은 장소 정보는 다시 요청하지 말고 재사용하세요.
+
+**오류**: 비로그인 `401`, 형식이 틀리거나 Google이 거절한 ID는 `400 INVALID_PARAM`, 폐업·삭제된 장소는
+`404 PLACE_NOT_FOUND`, 회원 한도 초과 `429`, 서버 전체 한도 초과·구글 장애·키 미설정은 `503`입니다.
+`404`는 일시적인 오류가 아니므로 재시도하지 말고 "없어진 장소"로 표시하세요.
 
 ### `GET /api/places/photo`
 

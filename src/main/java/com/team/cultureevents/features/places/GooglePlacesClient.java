@@ -12,6 +12,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -147,6 +148,12 @@ public class GooglePlacesClient {
                     .header("X-Goog-FieldMask", FIELD_MASK.replace("places.", ""))
                     .retrieve()
                     .body(String.class);
+        } catch (HttpClientErrorException.NotFound e) {
+            // 코스에 저장해 둔 장소가 폐업·삭제된 경우. 일시 장애(503)와 구분해 프론트가 안내할 수 있게 한다.
+            throw new BusinessException("PLACE_NOT_FOUND", "장소 정보를 찾을 수 없습니다. 폐업했거나 삭제된 장소일 수 있습니다.",
+                    HttpStatus.NOT_FOUND);
+        } catch (HttpClientErrorException.BadRequest e) {
+            throw BusinessException.badRequest("placeId 형식이 올바르지 않습니다.");
         } catch (RestClientException e) {
             throw unavailable("Google Places 상세 조회에 실패했습니다.");
         }

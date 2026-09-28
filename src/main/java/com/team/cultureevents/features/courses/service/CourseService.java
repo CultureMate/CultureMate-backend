@@ -1,5 +1,6 @@
 package com.team.cultureevents.features.courses.service;
 
+import com.team.cultureevents.features.auth.repository.MemberRepository;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.courses.domain.dto.CourseCreateRequestDTO;
 import com.team.cultureevents.features.courses.domain.dto.CourseDetailResponseDTO;
@@ -39,15 +40,21 @@ public class CourseService {
 
     private final CourseRepository courseRepository;
     private final EventService eventService;
+    private final MemberRepository memberRepository;
 
-    public CourseService(CourseRepository courseRepository, EventService eventService) {
+    public CourseService(CourseRepository courseRepository, EventService eventService,
+                         MemberRepository memberRepository) {
         this.courseRepository = courseRepository;
         this.eventService = eventService;
+        this.memberRepository = memberRepository;
     }
 
     public CourseDetailResponseDTO create(Long memberId, CourseCreateRequestDTO request) {
         String title = validateTitle(request == null ? null : request.title());
         List<CourseStopEntity> stops = buildStops(request == null ? null : request.stops(), Map.of());
+        // 같은 회원의 동시 저장 요청이 개수 확인을 함께 통과하지 않도록 회원 행을 잠근 뒤 센다.
+        memberRepository.findByIdForUpdate(memberId)
+                .orElseThrow(() -> BusinessException.notFound("회원을 찾을 수 없습니다."));
         if (courseRepository.countByMemberId(memberId) >= MAX_COURSES_PER_MEMBER) {
             throw new BusinessException("COURSE_LIMIT_EXCEEDED",
                     "코스는 회원당 최대 50개까지 저장할 수 있습니다.", HttpStatus.CONFLICT);
