@@ -22,8 +22,8 @@ public class EventViewService {
     /** 행사가 없으면 404. 없으면 0에서 시작해 +1. */
     @Transactional
     public EventViewResponseDTO increment(String rawEventId) {
-        String eventId = requireEventId(rawEventId);
-        eventService.getDetail(eventId);
+        // 중복 등록의 다른 주소로 들어와도 대표 eventId 기준으로 센다.
+        String eventId = eventService.getDetail(requireEventId(rawEventId)).eventId();
         EventViewEntity entity = eventViewRepository.findById(eventId)
                 .orElseGet(() -> new EventViewEntity(eventId, 0));
         int count = entity.increment();

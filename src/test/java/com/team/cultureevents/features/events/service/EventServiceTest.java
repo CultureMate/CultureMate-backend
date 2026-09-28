@@ -44,6 +44,17 @@ class EventServiceTest {
     }
 
     @Test
+    void detailFollowsAliasIdOfMergedDuplicate() {
+        SeoulEvent merged = new SeoulEvent("https://culture.seoul.go.kr/old", "빅무브", "공연", "중구", "DDP",
+                "2026-10-01", "2026-10-20", "", "", "", "", 37.56, 127.01, List.of("https://culture.seoul.go.kr/new"));
+        when(cache.getIfFresh()).thenReturn(List.of(merged));
+
+        // 합쳐져 사라진 주소로 조회해도 대표 행사(대표 eventId)가 나온다
+        assertEquals("https://culture.seoul.go.kr/old", service.getDetail("https://culture.seoul.go.kr/new").eventId());
+        assertEquals("https://culture.seoul.go.kr/old", service.getDetail("https://culture.seoul.go.kr/old").eventId());
+    }
+
+    @Test
     void prototypeKeywordAndDateRangeFindOverlappingEvent() {
         SeoulEvent wanted = new SeoulEvent("event-1", "마포 가을 전시", "전시/미술", "마포구",
                 "문화회관", "2026-09-20", "2026-09-25", "무료", "서울시", "https://example.com/1", "https://example.com/image.jpg");

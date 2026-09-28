@@ -16,7 +16,9 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -50,8 +52,8 @@ public class SeoulOpenApiClient {
 
         // 서울 열린데이터광장은 요청 한 번에 최대 1,000행을 허용한다.
         int pageSize = Math.max(1, Math.min(1000, props.seoulApi().pageSize()));
-        // 같은 행사가 문화포털에 여러 번 등록된 경우 하나만 남긴다(중복 키 → 남길 원본 행).
-        Map<String, JsonNode> uniqueRows = new LinkedHashMap<>();
+        // 같은 행사가 문화포털에 여러 번 등록된 경우를 중복 키로 묶는다.
+        Map<String, List<JsonNode>> groups = new LinkedHashMap<>();
         int fetched = 0;
         int start = 1;
 
@@ -79,7 +81,7 @@ public class SeoulOpenApiClient {
             }
 
             for (JsonNode row : rows) {
-                uniqueRows.merge(duplicateKey(row), row, SeoulOpenApiClient::newerRow);
+                groups.computeIfAbsent(duplicateKey(row), k -> new ArrayList<>()).add(row);
             }
             fetched += rows.size();
 
@@ -91,22 +93,44 @@ public class SeoulOpenApiClient {
         }
 
         List<SeoulEvent> all = new ArrayList<>();
-        for (JsonNode row : uniqueRows.values()) {
-            all.add(mapRow(row));
+        for (List<JsonNode> group : groups.values()) {
+            all.add(mergeDuplicates(group));
         }
         return resolveDuplicateIds(all);
     }
 
-    /** 중복 등록 판단 키: 제목(공백 제거)|시작일|장소(공백 제거) */
+    /** 중복 등록 판단 키: 제목|시작일|장소. 공백을 없애고 영문은 소문자로 통일한다(종료일은 수정될 수 있어 제외). */
     static String duplicateKey(JsonNode row) {
-        return text(row, "TITLE").replaceAll("\\s+", "")
+        return normalizeForKey(text(row, "TITLE"))
                 + "|" + toDate(text(row, "STRTDATE"))
-                + "|" + text(row, "PLACE").replaceAll("\\s+", "");
+                + "|" + normalizeForKey(text(row, "PLACE"));
     }
 
-    /** 둘 중 등록일(RGSTDATE)이 더 늦은 행을 남긴다. 같으면 먼저 온 행을 유지한다. */
-    static JsonNode newerRow(JsonNode kept, JsonNode candidate) {
-        return text(candidate, "RGSTDATE").compareTo(text(kept, "RGSTDATE")) > 0 ? candidate : kept;
+    private static String normalizeForKey(String value) {
+        return value.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 중복 등록 행을 하나로 합친다.
+     * 내용(이미지·기간·장소 등)은 등록일이 가장 최신인 행을, 대표 eventId는 가장 먼저 등록된 행을 쓴다.
+     * 새 등록 때문에 대표 ID가 바뀌면 기존 찜·댓글·소개문·조회수 연결이 끊기기 때문이다.
+     * 나머지 행의 ID는 aliasIds로 남겨 그 ID로 들어온 상세 조회도 대표 행사로 연결한다.
+     */
+    private SeoulEvent mergeDuplicates(List<JsonNode> rows) {
+        Comparator<JsonNode> byRegistered = Comparator.comparing(row -> text(row, "RGSTDATE"));
+        // 등록일이 같으면 먼저 온 행을 유지한다.
+        JsonNode newest = rows.stream().reduce((kept, next) -> byRegistered.compare(next, kept) > 0 ? next : kept).orElseThrow();
+        JsonNode oldest = rows.stream().reduce((kept, next) -> byRegistered.compare(next, kept) < 0 ? next : kept).orElseThrow();
+        SeoulEvent content = mapRow(newest);
+        String eventId = mapRow(oldest).eventId();
+        List<String> aliasIds = rows.stream()
+                .map(row -> mapRow(row).eventId())
+                .filter(id -> !id.equals(eventId))
+                .distinct()
+                .toList();
+        return new SeoulEvent(eventId, content.title(), content.category(), content.district(), content.place(),
+                content.startDate(), content.endDate(), content.fee(), content.organization(),
+                content.originalUrl(), content.imageUrl(), content.latitude(), content.longitude(), aliasIds);
     }
 
     /** 동일한 문화포털 URL이 여러 행사에 붙은 경우 명세의 조합키로 식별한다. */
@@ -122,7 +146,7 @@ public class SeoulOpenApiClient {
             SeoulEvent normalized = new SeoulEvent(
                     id, event.title(), event.category(), event.district(), event.place(),
                     event.startDate(), event.endDate(), event.fee(), event.organization(),
-                    event.originalUrl(), event.imageUrl(), event.latitude(), event.longitude()
+                    event.originalUrl(), event.imageUrl(), event.latitude(), event.longitude(), event.aliasIds()
             );
             // 완전히 같은 행은 한 번만 보여준다. 조합키도 충돌하면 다른 원본 필드까지
             // 포함한 결정적 키를 사용해 목록과 상세가 서로 다른 행을 가리키게 한다.
@@ -132,7 +156,7 @@ public class SeoulOpenApiClient {
                 SeoulEvent distinct = new SeoulEvent(
                         distinctId, event.title(), event.category(), event.district(), event.place(),
                         event.startDate(), event.endDate(), event.fee(), event.organization(),
-                        event.originalUrl(), event.imageUrl(), event.latitude(), event.longitude()
+                        event.originalUrl(), event.imageUrl(), event.latitude(), event.longitude(), event.aliasIds()
                 );
                 SeoulEvent collision = unique.putIfAbsent(distinctId, distinct);
                 if (collision != null && !collision.equals(distinct)) {

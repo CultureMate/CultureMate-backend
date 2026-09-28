@@ -95,8 +95,9 @@ public class EventService {
         if (eventId.isBlank()) {
             throw BusinessException.badRequest("eventId가 필요합니다.");
         }
+        // 중복 등록으로 합쳐진 다른 주소(aliasIds)로 들어와도 대표 행사로 연결한다.
         return loadEvents().stream()
-                .filter(e -> eventId.equals(e.eventId()))
+                .filter(e -> eventId.equals(e.eventId()) || e.aliasIds().contains(eventId))
                 .findFirst()
                 .map(this::toDetail)
                 .orElseThrow(() -> BusinessException.notFound("존재하지 않는 행사입니다."));

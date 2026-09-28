@@ -78,6 +78,39 @@ class SeoulEventMappingTest {
     }
 
     @Test
+    void duplicateKeepsFirstRegisteredIdWithNewestContentAndIgnoresCase() {
+        // 최신 등록 행이 먼저 와도 결과가 같아야 한다. 영문 대소문자·공백만 다른 중복도 묶는다.
+        String body = """
+                {"culturalEventInfo":{"list_total_count":3,"RESULT":{"CODE":"INFO-000"},"row":[
+                  {"TITLE":"빅무브 with Lia KIM","STRTDATE":"2026-10-01 00:00:00.0","END_DATE":"2026-10-20 00:00:00.0","PLACE":"DDP 어울림광장","RGSTDATE":"2026-09-20","HMPG_ADDR":"https://culture.seoul.go.kr/new","MAIN_IMG":"https://img/new.jpg","LAT":"37.56","LOT":"127.01"},
+                  {"TITLE":"빅 무브 with Lia KIM","STRTDATE":"2026-10-01 00:00:00.0","END_DATE":"2026-10-10 00:00:00.0","PLACE":"ddp 어울림광장","RGSTDATE":"2026-09-01","HMPG_ADDR":"https://culture.seoul.go.kr/old","MAIN_IMG":"https://img/old.jpg","LAT":"37.56","LOT":"127.01"},
+                  {"TITLE":"빅 무브 with lia kim","STRTDATE":"2026-10-01 00:00:00.0","END_DATE":"2026-10-15 00:00:00.0","PLACE":"DDP 어울림 광장","RGSTDATE":"2026-09-10","HMPG_ADDR":"https://culture.seoul.go.kr/mid","MAIN_IMG":"https://img/mid.jpg","LAT":"37.56","LOT":"127.01"}
+                ]}}
+                """;
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://seoul.test/key/json/culturalEventInfo/1/3/"))
+                .andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+        AppProperties props = new AppProperties(null,
+                new AppProperties.SeoulApi("key", "http://seoul.test", 30, 3), null, null, "http://localhost:5175");
+        SeoulOpenApiClient client = new SeoulOpenApiClient(props, builder, new ObjectMapper());
+
+        var events = client.fetchAll();
+
+        assertEquals(1, events.size());
+        var merged = events.get(0);
+        // 대표 ID는 가장 먼저 등록된 행의 주소로 유지
+        assertEquals("https://culture.seoul.go.kr/old", merged.eventId());
+        // 내용은 가장 최신 등록 행 기준(이미지·종료일·장소)
+        assertEquals("https://img/new.jpg", merged.imageUrl());
+        assertEquals("2026-10-20", merged.endDate());
+        assertEquals("DDP 어울림광장", merged.place());
+        // 나머지 주소는 별칭으로 남김
+        assertEquals(java.util.List.of("https://culture.seoul.go.kr/new", "https://culture.seoul.go.kr/mid"), merged.aliasIds());
+        server.verify();
+    }
+
+    @Test
     void keepsNewestDuplicateAndKeepsEventsWithoutCoordinates() {
         String body = """
                 {"culturalEventInfo":{"list_total_count":4,"RESULT":{"CODE":"INFO-000"},"row":[
@@ -99,7 +132,8 @@ class SeoulEventMappingTest {
 
         // 중복은 등록일이 최신인 행만, 좌표 없는 행사는 좌표 null로 유지, 위도 뒤 문자는 잘라서 읽음
         assertEquals(3, events.size());
-        assertEquals("https://culture.seoul.go.kr/new", events.get(0).eventId());
+        assertEquals("https://culture.seoul.go.kr/old", events.get(0).eventId());
+        assertEquals(java.util.List.of("https://culture.seoul.go.kr/new"), events.get(0).aliasIds());
         assertEquals("좌표 없는 행사", events.get(1).title());
         assertNull(events.get(1).latitude());
         assertEquals("향토문화미술대전", events.get(2).title());
