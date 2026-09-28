@@ -43,5 +43,5 @@ app:
     key: ${GOOGLE_PLACES_API_KEY:}
     search-monthly-limit: ${PLACES_SEARCH_MONTHLY_LIMIT:900}
     photo-monthly-limit: ${PLACES_PHOTO_MONTHLY_LIMIT:900}
-    search-per-minute: ${PLACES_SEARCH_PER_MINUTE:6}
-    photo-per-minute: ${PLACES_PHOTO_PER_MINUTE:12}
+    search-per-minute: ${PLACES_SEARCH_PER_MINUTE:20}
+    photo-per-minute: ${PLACES_PHOTO_PER_MINUTE:40}

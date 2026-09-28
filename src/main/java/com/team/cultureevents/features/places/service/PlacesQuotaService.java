@@ -38,8 +38,8 @@ public class PlacesQuotaService {
             PlatformTransactionManager manager,
             @Value("${app.places.search-monthly-limit:900}") int searchMonthly,
             @Value("${app.places.photo-monthly-limit:900}") int photoMonthly,
-            @Value("${app.places.search-per-minute:6}") int searchPerMinute,
-            @Value("${app.places.photo-per-minute:12}") int photoPerMinute) {
+            @Value("${app.places.search-per-minute:20}") int searchPerMinute,
+            @Value("${app.places.photo-per-minute:40}") int photoPerMinute) {
         this(daily, buckets, manager, searchMonthly, photoMonthly, searchPerMinute, photoPerMinute,
                 Clock.system(ZoneId.of("America/Los_Angeles")));
     }
