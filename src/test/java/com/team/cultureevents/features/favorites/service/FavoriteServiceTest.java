@@ -6,6 +6,7 @@ import com.team.cultureevents.features.events.service.EventService;
 import com.team.cultureevents.features.favorites.domain.dto.FavoriteRequestDTO;
 import com.team.cultureevents.features.favorites.domain.entity.FavoriteEntity;
 import com.team.cultureevents.features.favorites.repository.FavoriteRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -17,6 +18,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -27,6 +29,13 @@ class FavoriteServiceTest {
     private final FavoriteRepository repository = mock(FavoriteRepository.class);
     private final EventService events = mock(EventService.class);
     private final FavoriteService service = new FavoriteService(repository, events);
+
+    @BeforeEach
+    void eventIdsPassThrough() {
+        lenient().when(events.canonicalEventId(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(events.eventIdsIncludingAliases(any()))
+                .thenAnswer(invocation -> List.of(invocation.getArgument(0, String.class)));
+    }
 
     @Test
     void saveStoresEventSnapshotAndRejectsDuplicate() {
@@ -78,6 +87,22 @@ class FavoriteServiceTest {
         when(repository.findByMemberIdAndEventId(1L, "event-1")).thenReturn(Optional.of(september));
         service.delete(1L, "event-1");
         verify(repository).delete(september);
+    }
+
+    @Test
+    void aliasFavoriteIsNotSavedAgainUnderCanonicalId() {
+        when(events.canonicalEventId("canonical")).thenReturn("canonical");
+        when(events.eventIdsIncludingAliases("canonical")).thenReturn(List.of("canonical", "alias"));
+        when(repository.findByMemberIdAndEventId(1L, "canonical")).thenReturn(Optional.empty());
+        when(repository.findByMemberIdAndEventId(1L, "alias"))
+                .thenReturn(Optional.of(new FavoriteEntity(1L, "alias", "빅무브",
+                        LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 20), "DDP", Instant.now())));
+
+        BusinessException duplicate = assertThrows(BusinessException.class,
+                () -> service.save(1L, new FavoriteRequestDTO("canonical")));
+
+        assertEquals("ALREADY_SAVED", duplicate.getCode());
+        verify(repository, never()).save(any());
     }
 
     @Test

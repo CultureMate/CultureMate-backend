@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Optional;
 
 /** 로그인 회원(memberId) 기준 관심행사 CRUD. */
 @Service
@@ -35,11 +36,12 @@ public class FavoriteService {
         if (eventId.isBlank()) {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
-        if (favoriteRepository.findByMemberIdAndEventId(memberId, eventId).isPresent()) {
+        String canonical = eventService.canonicalEventId(eventId);
+        if (findSaved(memberId, canonical).isPresent()) {
             throw BusinessException.conflict("이미 저장된 행사입니다.");
         }
 
-        EventDetailResponseDTO detail = eventService.getDetail(eventId);
+        EventDetailResponseDTO detail = eventService.getDetail(canonical);
         FavoriteEntity saved = favoriteRepository.save(new FavoriteEntity(
                 memberId,
                 detail.eventId(),
@@ -74,9 +76,19 @@ public class FavoriteService {
         if (id.isBlank()) {
             throw BusinessException.badRequest("eventId는 필수입니다.");
         }
-        FavoriteEntity existing = favoriteRepository.findByMemberIdAndEventId(memberId, id)
+        FavoriteEntity existing = findSaved(memberId, eventService.canonicalEventId(id))
                 .orElseThrow(() -> BusinessException.notFound("저장된 행사가 없습니다."));
         favoriteRepository.delete(existing);
+    }
+
+    private Optional<FavoriteEntity> findSaved(Long memberId, String canonicalEventId) {
+        for (String id : eventService.eventIdsIncludingAliases(canonicalEventId)) {
+            Optional<FavoriteEntity> found = favoriteRepository.findByMemberIdAndEventId(memberId, id);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        return Optional.empty();
     }
 
     private static YearMonth parseMonth(String month) {

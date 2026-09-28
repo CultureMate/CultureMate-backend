@@ -6,6 +6,7 @@ import com.team.cultureevents.features.seoul.SeoulOpenApiClient;
 import com.team.cultureevents.features.seoul.domain.SeoulEvent;
 import com.team.cultureevents.features.summary.domain.entity.AiSummaryEntity;
 import com.team.cultureevents.features.summary.repository.AiSummaryRepository;
+import com.team.cultureevents.features.views.domain.entity.EventViewEntity;
 import com.team.cultureevents.features.views.repository.EventViewRepository;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +53,26 @@ class EventServiceTest {
         // 합쳐져 사라진 주소로 조회해도 대표 행사(대표 eventId)가 나온다
         assertEquals("https://culture.seoul.go.kr/old", service.getDetail("https://culture.seoul.go.kr/new").eventId());
         assertEquals("https://culture.seoul.go.kr/old", service.getDetail("https://culture.seoul.go.kr/old").eventId());
+    }
+
+    @Test
+    void detailKeepsViewCountAndSummaryStoredUnderAlias() {
+        SeoulEvent merged = new SeoulEvent("https://culture.seoul.go.kr/old", "빅무브", "공연", "중구", "DDP",
+                "2026-10-01", "2026-10-20", "", "", "", "", 37.56, 127.01,
+                List.of("https://culture.seoul.go.kr/new"));
+        when(cache.getIfFresh()).thenReturn(List.of(merged));
+        when(eventViewRepository.findById("https://culture.seoul.go.kr/old")).thenReturn(Optional.empty());
+        when(eventViewRepository.findById("https://culture.seoul.go.kr/new"))
+                .thenReturn(Optional.of(new EventViewEntity("https://culture.seoul.go.kr/new", 4)));
+        when(aiSummaryRepository.findById("https://culture.seoul.go.kr/old")).thenReturn(Optional.empty());
+        when(aiSummaryRepository.findById("https://culture.seoul.go.kr/new"))
+                .thenReturn(Optional.of(new AiSummaryEntity("https://culture.seoul.go.kr/new", "별칭 소개",
+                        Instant.parse("2026-09-01T00:00:00Z"))));
+
+        var detail = service.getDetail("https://culture.seoul.go.kr/old");
+
+        assertEquals(4, detail.viewCount());
+        assertEquals("별칭 소개", detail.summary());
     }
 
     @Test
