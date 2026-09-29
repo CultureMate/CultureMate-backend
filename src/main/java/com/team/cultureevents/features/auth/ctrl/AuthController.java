@@ -93,9 +93,12 @@ public class AuthController {
                 .build();
     }
 
+    /** 로그인 여부 확인용이라 비로그인은 오류(401)가 아니라 204로 답한다. */
     @GetMapping("/me")
-    public MeResponse me(HttpServletRequest request) {
-        return toMe(currentMember.requireMember(request));
+    public ResponseEntity<MeResponse> me(HttpServletRequest request) {
+        return currentMember.findMember(request)
+                .map(member -> ResponseEntity.ok(toMe(member)))
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @PutMapping("/me")

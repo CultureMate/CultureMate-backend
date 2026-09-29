@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -155,7 +156,7 @@ class AuthControllerMeTest {
     void meReturnsInterestsAndFavoriteCount() throws Exception {
         MemberEntity member = member();
         member.updateInterestCategories(java.util.List.of("전시", "공연"));
-        when(currentMember.requireMember(any())).thenReturn(member);
+        when(currentMember.findMember(any())).thenReturn(java.util.Optional.of(member));
         when(favorites.countByMemberId(7L)).thenReturn(2L);
 
         mockMvc.perform(get("/api/auth/me"))
@@ -163,6 +164,16 @@ class AuthControllerMeTest {
                 .andExpect(jsonPath("$.interestCategories[0]").value("전시"))
                 .andExpect(jsonPath("$.interestCategories[1]").value("공연"))
                 .andExpect(jsonPath("$.favoriteCount").value(2));
+    }
+
+    @Test
+    void meWithoutSessionIs204WithoutBody() throws Exception {
+        when(currentMember.findMember(any())).thenReturn(java.util.Optional.empty());
+
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+        verify(currentMember, never()).requireMember(any());
     }
 
     @Test
