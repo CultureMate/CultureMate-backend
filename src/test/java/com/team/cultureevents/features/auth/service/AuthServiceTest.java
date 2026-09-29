@@ -14,6 +14,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,21 +36,38 @@ class AuthServiceTest {
     }
 
     @Test
-    void loginReusesMemberAndCreatesPersistentSession() {
-        MemberEntity existing = new MemberEntity("12345", "old");
-        when(kakao.fetchProfile("one-time-code")).thenReturn(new KakaoApiClient.KakaoProfile("12345", "new"));
+    void loginReusesMemberWithoutOverwritingNicknameAndCreatesPersistentSession() {
+        MemberEntity existing = new MemberEntity("12345", "직접 바꾼 닉네임");
+        when(kakao.fetchProfile("one-time-code")).thenReturn(new KakaoApiClient.KakaoProfile("12345", "카카오 사용자"));
         when(members.findByKakaoId("12345")).thenReturn(Optional.of(existing));
-        when(members.save(existing)).thenReturn(existing);
 
         Instant before = Instant.now();
         String id = auth.login("one-time-code");
 
         assertThat(id).hasSize(36);
-        assertThat(existing.getNickname()).isEqualTo("new");
+        assertThat(existing.getNickname()).isEqualTo("직접 바꾼 닉네임");
+        verify(members, never()).save(any());
         ArgumentCaptor<AuthSessionEntity> saved = ArgumentCaptor.forClass(AuthSessionEntity.class);
         verify(sessions).save(saved.capture());
         assertThat(saved.getValue().getSessionId()).isEqualTo(id);
         assertThat(saved.getValue().getMember()).isSameAs(existing);
         assertThat(saved.getValue().getExpiresAt()).isAfter(before.plusSeconds(6 * 24 * 3600));
+    }
+
+    @Test
+    void firstLoginCreatesMemberWithKakaoNickname() {
+        when(kakao.fetchProfile("one-time-code")).thenReturn(new KakaoApiClient.KakaoProfile("67890", "카카오 닉네임"));
+        when(members.findByKakaoId("67890")).thenReturn(Optional.empty());
+        when(members.save(any(MemberEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        auth.login("one-time-code");
+
+        ArgumentCaptor<MemberEntity> created = ArgumentCaptor.forClass(MemberEntity.class);
+        verify(members).save(created.capture());
+        assertThat(created.getValue().getKakaoId()).isEqualTo("67890");
+        assertThat(created.getValue().getNickname()).isEqualTo("카카오 닉네임");
+        ArgumentCaptor<AuthSessionEntity> saved = ArgumentCaptor.forClass(AuthSessionEntity.class);
+        verify(sessions).save(saved.capture());
+        assertThat(saved.getValue().getMember()).isSameAs(created.getValue());
     }
 }
