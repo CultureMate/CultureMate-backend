@@ -101,6 +101,8 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 
 Redirect URI: `http://localhost:8080/api/auth/kakao/callback`
 
+카카오 닉네임(동의하지 않았으면 `카카오 사용자`)은 처음 가입할 때만 회원 닉네임으로 씁니다. 이후 로그인에서는 회원이 설정한 닉네임을 덮어쓰지 않습니다.
+
 ```js
 window.location.href = 'http://localhost:8080/api/auth/kakao/start'
 const me = await fetch('/api/auth/me', { credentials: 'include' })

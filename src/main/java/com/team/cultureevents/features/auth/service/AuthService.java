@@ -50,9 +50,8 @@ public class AuthService {
             throw BusinessException.badRequest("카카오 인가 코드가 없습니다.");
         }
         KakaoApiClient.KakaoProfile profile = kakao.fetchProfile(code);
-        MemberEntity member = members.findByKakaoId(profile.id()).orElseGet(() -> new MemberEntity(profile.id(), profile.nickname()));
-        member.updateNickname(profile.nickname());
-        member = members.save(member);
+        MemberEntity member = members.findByKakaoId(profile.id())
+                .orElseGet(() -> members.save(new MemberEntity(profile.id(), profile.nickname())));
         String sessionId = UUID.randomUUID().toString();
         sessions.save(new AuthSessionEntity(sessionId, member, Instant.now().plus(SESSION_AGE)));
         return sessionId;
