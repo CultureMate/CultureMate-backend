@@ -8,7 +8,9 @@ import com.team.cultureevents.features.places.PlacesRequestValidator;
 import com.team.cultureevents.features.places.domain.dto.PlaceCandidateDTO;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -33,9 +35,11 @@ public class PlacesService {
     // 100% 실시간은 아니라서, 이 필터가 "가보니 폐업" 위험을 완전히 없애주진 못한다.
     private static final Set<String> EXCLUDED_BUSINESS_STATUS = Set.of("CLOSED_PERMANENTLY", "CLOSED_TEMPORARILY");
 
-    // 두 행사 좌표로 중심을 잡을 때, 반경이 너무 좁거나(사실상 같은 지점) 구글 상한을 넘지 않게 clamp한다.
+    // 두 행사가 이 거리 이하로 가까울 때만 중간점 한 곳을 검색한다. 더 멀면 중간점이 어느 행사에서도
+    // 걸어가기 애매한 곳이 되기 쉬워, 각 행사 근처를 따로 검색한다.
+    static final double MIDPOINT_SEARCH_MAX_DISTANCE_METERS = 1_500;
+    static final int NEAR_EVENT_RADIUS_METERS = 750;
     static final int MIN_BETWEEN_RADIUS_METERS = 100;
-    static final int MAX_BETWEEN_RADIUS_METERS = 50_000; // Google Places 반경 상한
 
     // 베이지안 가중평균(IMDB 방식)의 m값: 리뷰가 이 값보다 훨씬 많아야 자기 평점을 온전히 인정받는다.
     // 값을 올리면 "리뷰 많은 곳"을 더 우대하고, 낮추면 "평점 자체"를 더 신뢰한다. 정답은 없고 팀이 튜닝하는 값.
@@ -75,9 +79,10 @@ public class PlacesService {
     }
 
     /**
-     * 코스에서 연속된 두 행사(eventId1 -> eventId2) 사이 구간에 끼워 넣을 카페/음식점을 찾는다.
-     * 두 행사 좌표의 평균을 중심으로, 두 좌표 사이 직선거리의 절반을 반경으로 검색한다.
-     * 카테고리(cafe 또는 restaurant) 하나당 최대 20개를 베이지안 평점과 우회거리로 정렬하고,
+     * 코스에서 연속된 두 행사(eventId1 -> eventId2)를 이어 가기 좋은 카페/음식점을 찾는다.
+     * 두 행사가 1.5km 이하면 중간점을 한 번 검색하고, 더 멀면 각 행사 근처(반경 750m)를 한 번씩 검색한다.
+     * 후보는 베이지안 평점과 우회거리로 점수를 매긴 뒤, 더 가까운 행사 쪽(nearEventId)으로 나눠
+     * 양쪽이 번갈아 나오도록 최대 20개를 돌려준다.
      * "5개씩 페이지로 넘겨보기"는 프론트가 이 배열 안에서 나눠서 처리한다(추가 호출 없음).
      *
      * @param type "cafe" 또는 "restaurant" (한 번에 하나의 카테고리만)
@@ -101,15 +106,22 @@ public class PlacesService {
 
         validateKoreaBounds(event1.latitude(), event1.longitude());
         validateKoreaBounds(event2.latitude(), event2.longitude());
-        double centerLat = (event1.latitude() + event2.latitude()) / 2;
-        double centerLng = (event1.longitude() + event2.longitude()) / 2;
         double distanceMeters = haversineMeters(event1.latitude(), event1.longitude(),
                 event2.latitude(), event2.longitude());
-        int radius = (int) Math.round(
-                Math.min(Math.max(distanceMeters / 2, MIN_BETWEEN_RADIUS_METERS), MAX_BETWEEN_RADIUS_METERS));
 
-        List<PlaceCandidateDTO> pool = placesClient.searchNearby(
-                centerLat, centerLng, List.of(type), radius, RESULT_LIMIT, memberId);
+        List<PlaceCandidateDTO> pool = new ArrayList<>();
+        if (distanceMeters <= MIDPOINT_SEARCH_MAX_DISTANCE_METERS) {
+            double centerLat = (event1.latitude() + event2.latitude()) / 2;
+            double centerLng = (event1.longitude() + event2.longitude()) / 2;
+            int radius = (int) Math.round(Math.max(distanceMeters / 2, MIN_BETWEEN_RADIUS_METERS));
+            pool.addAll(placesClient.searchNearby(centerLat, centerLng, List.of(type), radius, RESULT_LIMIT, memberId));
+        } else {
+            pool.addAll(placesClient.searchNearby(event1.latitude(), event1.longitude(), List.of(type),
+                    NEAR_EVENT_RADIUS_METERS, RESULT_LIMIT, memberId));
+            pool.addAll(placesClient.searchNearby(event2.latitude(), event2.longitude(), List.of(type),
+                    NEAR_EVENT_RADIUS_METERS, RESULT_LIMIT, memberId));
+        }
+        pool = distinctByPlaceId(pool);
 
         // Geographic estimates, not walking/driving route lengths.
         double allowedDetour = Math.min(MAX_ALLOWED_DETOUR_METERS,
@@ -126,13 +138,48 @@ public class PlacesService {
                 .filter(p -> p.detourMeters() <= allowedDetour)
                 .toList();
         double average = eligible.stream().mapToDouble(PlaceCandidateDTO::rating).average().orElse(0);
-        return eligible.stream()
+        List<PlaceCandidateDTO> ranked = eligible.stream()
                 .map(p -> p.ranked(p.detourMeters(), bayesianScore(p.rating(), p.userRatingCount(), average)
                         - MAX_DETOUR_PENALTY * p.detourMeters() / allowedDetour))
                 .sorted(Comparator.comparingDouble(PlaceCandidateDTO::recommendationScore).reversed()
                         .thenComparingDouble(PlaceCandidateDTO::detourMeters)
                         .thenComparing(PlaceCandidateDTO::placeId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(p -> p.near(haversineMeters(event1.latitude(), event1.longitude(), p.latitude(), p.longitude())
+                        <= haversineMeters(p.latitude(), p.longitude(), event2.latitude(), event2.longitude())
+                        ? eventId1 : eventId2))
                 .toList();
+        return alternateByNearEvent(ranked, eventId1, RESULT_LIMIT);
+    }
+
+    /** 두 번 검색하면 같은 장소가 양쪽에 모두 나올 수 있어, 먼저 나온 것 하나만 남긴다. */
+    private static List<PlaceCandidateDTO> distinctByPlaceId(List<PlaceCandidateDTO> pool) {
+        Set<String> seen = new HashSet<>();
+        return pool.stream()
+                .filter(p -> p.placeId() == null || seen.add(p.placeId()))
+                .toList();
+    }
+
+    /**
+     * 점수순 목록을 가까운 행사별로 나눈 뒤, 점수가 더 높은 쪽부터 한 개씩 번갈아 담는다.
+     * 한쪽이 먼저 떨어지면 나머지는 남은 쪽 순서대로 채운다.
+     */
+    static List<PlaceCandidateDTO> alternateByNearEvent(List<PlaceCandidateDTO> ranked, String firstEventId, int limit) {
+        List<PlaceCandidateDTO> first = ranked.stream().filter(p -> firstEventId.equals(p.nearEventId())).toList();
+        List<PlaceCandidateDTO> second = ranked.stream().filter(p -> !firstEventId.equals(p.nearEventId())).toList();
+        List<PlaceCandidateDTO> result = new ArrayList<>();
+        int i = 0;
+        int j = 0;
+        boolean takeFirst = !first.isEmpty()
+                && (second.isEmpty() || first.get(0).recommendationScore() >= second.get(0).recommendationScore());
+        while (result.size() < limit && (i < first.size() || j < second.size())) {
+            if ((takeFirst && i < first.size()) || j >= second.size()) {
+                result.add(first.get(i++));
+            } else {
+                result.add(second.get(j++));
+            }
+            takeFirst = !takeFirst;
+        }
+        return result;
     }
 
     /** 저장된 코스의 placeId를 최신 Google 장소 정보로 다시 조회한다. */

@@ -280,6 +280,7 @@ public class GooglePlacesClient {
                 openNow,
                 openingHours,
                 null,
+                null,
                 null
         );
     }
