@@ -13,8 +13,10 @@ import java.util.Optional;
 
 public interface CourseRepository extends JpaRepository<CourseEntity, Long> {
 
+    @EntityGraph(attributePaths = "stops")
     List<CourseEntity> findByMemberIdOrderByCreatedAtDesc(Long memberId);
 
+    @EntityGraph(attributePaths = "stops")
     List<CourseEntity> findByMemberIdAndFavoritedTrueOrderByFavoritedAtDesc(Long memberId);
 
     long countByMemberId(Long memberId);

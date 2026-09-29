@@ -9,6 +9,7 @@ import com.team.cultureevents.features.courses.domain.dto.CourseStopRequestDTO;
 import com.team.cultureevents.features.courses.domain.dto.CourseUpdateRequestDTO;
 import com.team.cultureevents.features.courses.domain.entity.CourseEntity;
 import com.team.cultureevents.features.courses.domain.entity.CourseStopEntity;
+import com.team.cultureevents.features.courses.domain.entity.CourseStopType;
 import com.team.cultureevents.features.courses.repository.CourseRepository;
 import com.team.cultureevents.features.events.domain.dto.EventDetailResponseDTO;
 import com.team.cultureevents.features.events.service.EventService;
@@ -87,6 +88,63 @@ class CourseServiceTest {
                 .hasFieldOrPropertyWithValue("code", "COURSE_LIMIT_EXCEEDED");
         verify(members).findByIdForUpdate(7L);
         verify(courses, never()).save(any());
+    }
+
+    @Test
+    void listReturnsOrderedPreviewStopsWithoutResolvingPlaces() {
+        CourseEntity course = new CourseEntity(7L, "서울 문화 산책",
+                Instant.parse("2026-09-28T00:00:00Z"));
+        course.initializeStops(List.of(
+                CourseStopEntity.event(0, event("event-1", "행사 1")),
+                CourseStopEntity.place(1, CourseStopType.CAFE, "ChIJ_cafe"),
+                CourseStopEntity.place(2, CourseStopType.RESTAURANT, "ChIJ_restaurant"),
+                CourseStopEntity.event(3, event("event-2", "행사 2"))
+        ));
+        when(courses.findByMemberIdOrderByCreatedAtDesc(7L)).thenReturn(List.of(course));
+
+        var result = service.list(7L, false);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).previewStops()).hasSize(4);
+        assertThat(result.get(0).previewStops())
+                .extracting(stop -> stop.type())
+                .containsExactly("event", "cafe", "restaurant", "event");
+        assertThat(result.get(0).previewStops().get(0).name()).isEqualTo("행사 1");
+        assertThat(result.get(0).previewStops().get(0).imageUrl())
+                .isEqualTo("https://example.com/image.jpg");
+        assertThat(result.get(0).previewStops().get(1).placeId()).isEqualTo("ChIJ_cafe");
+        assertThat(result.get(0).previewStops().get(1).name()).isNull();
+        assertThat(result.get(0).previewStops().get(1).imageUrl()).isNull();
+        assertThat(result.get(0).previewStops().get(2).placeId()).isEqualTo("ChIJ_restaurant");
+        assertThat(result.get(0).previewStops().get(2).name()).isNull();
+        assertThat(result.get(0).previewStops().get(2).imageUrl()).isNull();
+        verify(events, never()).getDetail(any());
+    }
+
+    @Test
+    void listLimitsPreviewStopsToFour() {
+        CourseEntity course = new CourseEntity(7L, "긴 코스",
+                Instant.parse("2026-09-28T00:00:00Z"));
+        course.initializeStops(List.of(
+                CourseStopEntity.place(0, CourseStopType.RESTAURANT, "ChIJ_restaurant_1"),
+                CourseStopEntity.event(1, event("event-1", "행사 1")),
+                CourseStopEntity.place(2, CourseStopType.CAFE, "ChIJ_cafe_1"),
+                CourseStopEntity.place(3, CourseStopType.RESTAURANT, "ChIJ_restaurant_2"),
+                CourseStopEntity.event(4, event("event-2", "행사 2")),
+                CourseStopEntity.place(5, CourseStopType.CAFE, "ChIJ_cafe_2"),
+                CourseStopEntity.event(6, event("event-3", "행사 3"))
+        ));
+        when(courses.findByMemberIdOrderByCreatedAtDesc(7L)).thenReturn(List.of(course));
+
+        var result = service.list(7L, false);
+
+        assertThat(result.get(0).stopCount()).isEqualTo(7);
+        assertThat(result.get(0).previewStops())
+                .extracting(stop -> stop.stopOrder())
+                .containsExactly(0, 1, 2, 3);
+        assertThat(result.get(0).previewStops())
+                .extracting(stop -> stop.type())
+                .containsExactly("restaurant", "event", "cafe", "restaurant");
     }
 
     @Test
