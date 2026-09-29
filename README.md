@@ -8,8 +8,8 @@
 
 ## 📌 현재 범위
 
-- ✅ **구현됨:** 서울시 문화행사 목록·상세·필터, 관심 행사(찜), 카카오 로그인·세션, 댓글, 조회수, 홈 HOT/근처, 로컬 H2, AI 소개문, Docker 전체 실행(프론트·백엔드·MariaDB)
-- 📋 **이슈로 남김:** 마이페이지 수정·탈퇴, 상세 보완, Google Places
+- ✅ **구현됨:** 서울시 문화행사 목록·상세·필터, 관심 행사(찜), 카카오 로그인·세션, 마이페이지 수정·탈퇴(카카오 연결 끊기 포함), 댓글, 조회수, 홈 HOT/근처, AI 소개문, Google Places 장소 추천, 코스 저장·공유, 로컬 H2, Docker 전체 실행(프론트·백엔드·MariaDB)
+- 📋 **이슈로 남김:** 상세 보완
 
 <br>
 
@@ -27,7 +27,7 @@
 - 행사 원본은 DB에 저장하지 않습니다. 서울시 API를 호출하고 30분 캐시합니다.
 - 찜(관심 행사)은 로그인 회원 기준입니다. 세션 쿠키가 없으면 `401`입니다.
 - 카카오 로그인은 `CULTUREMATE_SESSION` HttpOnly 쿠키(7일)입니다. `/me`·로그아웃은 `credentials: include`가 필요합니다.
-- API 키는 `.env`의 `SEOUL_API_KEY`, `KAKAO_REST_KEY`만 읽습니다.
+- API 키는 `.env`에서 읽습니다. 서울시(`SEOUL_API_KEY`), 카카오(`KAKAO_REST_KEY`·`KAKAO_CLIENT_SECRET`·`KAKAO_ADMIN_KEY`), OpenAI(`OPENAI_API_KEY`), Google Places(`GOOGLE_PLACES_API_KEY`)입니다. 키가 없어도 서버는 뜨고, 그 키를 쓰는 기능만 동작하지 않습니다(`.env.example` 참고).
 
 <br>
 
