@@ -5,6 +5,7 @@ import com.team.cultureevents.features.auth.repository.AuthSessionRepository;
 import com.team.cultureevents.features.auth.repository.MemberRepository;
 import com.team.cultureevents.features.auth.service.AuthService;
 import com.team.cultureevents.features.auth.service.CurrentMemberService;
+import com.team.cultureevents.features.auth.service.KakaoApiClient;
 import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.commons.handler.GlobalExceptionHandler;
@@ -38,12 +39,13 @@ class AuthControllerMeTest {
     private final AuthSessionRepository sessions = mock(AuthSessionRepository.class);
     private final FavoriteRepository favorites = mock(FavoriteRepository.class);
     private final CourseService courses = mock(CourseService.class);
+    private final KakaoApiClient kakao = mock(KakaoApiClient.class);
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         AuthController controller = new AuthController(
-                mock(AuthService.class), currentMember, mock(AppProperties.class), members, sessions, favorites, courses);
+                mock(AuthService.class), currentMember, mock(AppProperties.class), members, sessions, favorites, courses, kakao);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
@@ -114,6 +116,7 @@ class AuthControllerMeTest {
 
         mockMvc.perform(delete("/api/auth/me"))
                 .andExpect(status().isUnauthorized());
+        verify(kakao, never()).unlink(any());
         verify(sessions, never()).deleteByMember_MemberId(any());
         verify(members, never()).delete(any());
     }
@@ -128,9 +131,23 @@ class AuthControllerMeTest {
                 .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("CULTUREMATE_SESSION")))
                 .andExpect(header().string("Set-Cookie", org.hamcrest.Matchers.containsString("Max-Age=0")));
 
+        verify(kakao).unlink("kakao-1");
         verify(sessions).deleteByMember_MemberId(7L);
         verify(favorites).deleteByMemberId(7L);
         verify(courses).deleteAllByMemberId(7L);
+        verify(members).delete(member);
+    }
+
+    @Test
+    void deleteStillRemovesMemberWhenKakaoUnlinkFails() throws Exception {
+        MemberEntity member = member();
+        when(currentMember.requireMember(any())).thenReturn(member);
+        when(kakao.unlink("kakao-1")).thenReturn(false);
+
+        mockMvc.perform(delete("/api/auth/me"))
+                .andExpect(status().isNoContent());
+
+        verify(sessions).deleteByMember_MemberId(7L);
         verify(members).delete(member);
     }
 

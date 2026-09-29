@@ -22,7 +22,7 @@ public record AppProperties(
 
     public record Openai(String key, String model) {}
 
-    public record Kakao(String restKey, String clientSecret, String redirectUri) {}
+    public record Kakao(String restKey, String clientSecret, String redirectUri, String adminKey) {}
 
     public record Places(String key) {}
 }
