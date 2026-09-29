@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -14,6 +17,8 @@ import org.springframework.web.client.RestClientResponseException;
 
 @Component
 public class KakaoApiClient {
+    private static final Logger log = LoggerFactory.getLogger(KakaoApiClient.class);
+
     private final AppProperties.Kakao settings;
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -76,6 +81,36 @@ public class KakaoApiClient {
             throw BusinessException.upstream("카카오 로그인 서버가 요청을 거부했습니다" + (errorCode.isBlank() ? "." : " (" + errorCode + ")."));
         } catch (RestClientException ex) {
             throw BusinessException.upstream("카카오 로그인 서버 요청에 실패했습니다.");
+        }
+    }
+
+    /**
+     * 탈퇴 회원의 카카오 앱 연결을 끊어 다음 로그인 때 동의 화면이 다시 나오게 한다.
+     * 실패해도 서비스 탈퇴는 계속되어야 하므로 예외를 던지지 않고 결과만 돌려준다.
+     */
+    public boolean unlink(String kakaoId) {
+        String adminKey = settings.adminKey();
+        if (adminKey == null || adminKey.isBlank() || kakaoId == null || kakaoId.isBlank()) {
+            return false;
+        }
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("target_id_type", "user_id");
+        form.add("target_id", kakaoId);
+        try {
+            restClient.post()
+                    .uri("https://kapi.kakao.com/v1/user/unlink")
+                    .header(HttpHeaders.AUTHORIZATION, "KakaoAK " + adminKey)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(form)
+                    .retrieve()
+                    .toBodilessEntity();
+            return true;
+        } catch (RestClientResponseException ex) {
+            log.warn("카카오 연결 끊기 실패 (HTTP {})", ex.getStatusCode().value());
+            return false;
+        } catch (RestClientException ex) {
+            log.warn("카카오 연결 끊기 요청 실패: {}", ex.getClass().getSimpleName());
+            return false;
         }
     }
 

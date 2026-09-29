@@ -5,6 +5,7 @@ import com.team.cultureevents.features.auth.repository.AuthSessionRepository;
 import com.team.cultureevents.features.auth.repository.MemberRepository;
 import com.team.cultureevents.features.auth.service.AuthService;
 import com.team.cultureevents.features.auth.service.CurrentMemberService;
+import com.team.cultureevents.features.auth.service.KakaoApiClient;
 import com.team.cultureevents.features.commons.config.AppProperties;
 import com.team.cultureevents.features.commons.handler.BusinessException;
 import com.team.cultureevents.features.favorites.repository.FavoriteRepository;
@@ -43,10 +44,11 @@ public class AuthController {
     private final AuthSessionRepository sessions;
     private final FavoriteRepository favorites;
     private final CourseService courses;
+    private final KakaoApiClient kakao;
 
     public AuthController(AuthService auth, CurrentMemberService currentMember, AppProperties properties,
                            MemberRepository members, AuthSessionRepository sessions, FavoriteRepository favorites,
-                           CourseService courses) {
+                           CourseService courses, KakaoApiClient kakao) {
         this.auth = auth;
         this.currentMember = currentMember;
         this.properties = properties;
@@ -54,6 +56,7 @@ public class AuthController {
         this.sessions = sessions;
         this.favorites = favorites;
         this.courses = courses;
+        this.kakao = kakao;
     }
 
     @GetMapping("/kakao/start")
@@ -127,6 +130,7 @@ public class AuthController {
     public ResponseEntity<Void> deleteMe(HttpServletRequest request) {
         MemberEntity member = currentMember.requireMember(request);
 
+        kakao.unlink(member.getKakaoId());
         sessions.deleteByMember_MemberId(member.getMemberId());
         favorites.deleteByMemberId(member.getMemberId());
         courses.deleteAllByMemberId(member.getMemberId());

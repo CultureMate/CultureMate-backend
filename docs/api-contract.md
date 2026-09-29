@@ -171,12 +171,13 @@ OpenAI 읽기 제한은 30초, 출력은 최대 300토큰입니다. 같은 행�
 |--------|------|------|
 | GET | `/api/auth/me` | `{ memberId, nickname, residence, interestCategories, favoriteCount }` |
 | PUT | `/api/auth/me` body `{ "nickname"?, "residence"?, "interestCategories"? }` | `200` 수정된 정보(GET과 같은 형태) |
-| DELETE | `/api/auth/me` | `204`. 세션·관심 행사·회원 삭제, 쿠키 만료 |
+| DELETE | `/api/auth/me` | `204`. 카카오 연결 끊기 후 세션·관심 행사·회원 삭제, 쿠키 만료 |
 
 수정 시 값이 없거나 기존과 같으면 그 필드는 변경하지 않음. 세 값이 모두 없으면 `400 INVALID_PARAM`. 닉네임·거주지는 50자 이하이고, 넘으면 `400 INVALID_PARAM`.  
 `interestCategories`는 문자열 배열(예: `["전시","공연"]`). 보내면 통째로 교체, 공백·중복은 제거, 최대 10개, 값에 쉼표 불가. 쉼표로 이은 전체는 200자 이내이고, 넘으면 `400 INVALID_PARAM`.  
 `residence`가 없으면 FE는 최초 로그인으로 보고 프로필 설정 화면으로 보냄.  
-탈퇴한 회원의 댓글은 남고 `nickname`이 `null`로 내려감.
+탈퇴한 회원의 댓글은 남고 `nickname`이 `null`로 내려감.  
+탈퇴 시 `KAKAO_ADMIN_KEY`로 카카오 앱 연결을 끊어, 같은 카카오 계정으로 다시 로그인하면 동의 화면부터 나옴. 키가 없거나 카카오 호출이 실패해도 탈퇴는 `204`로 끝남(로그만 남김).
 
 ## 9. 홈 HOT / 근처 · 완료
 

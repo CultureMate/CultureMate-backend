@@ -39,7 +39,7 @@ JDK **17**. Maven은 `mvnw`가 받습니다.
 copy .env.example .env
 ```
 
-macOS/Linux는 `cp .env.example .env` 입니다. `.env`에 `SEOUL_API_KEY`를 넣습니다. 카카오를 쓰려면 `KAKAO_REST_KEY`와 콘솔 Redirect URI `http://localhost:8080/api/auth/kakao/callback`도 맞춥니다.
+macOS/Linux는 `cp .env.example .env` 입니다. `.env`에 `SEOUL_API_KEY`를 넣습니다. 카카오를 쓰려면 `KAKAO_REST_KEY`와 콘솔 Redirect URI `http://localhost:8080/api/auth/kakao/callback`도 맞춥니다. 탈퇴 시 카카오 연결까지 끊으려면 콘솔 "앱 키 > 어드민 키"를 `KAKAO_ADMIN_KEY`에 넣습니다(서버 `.env`에만 보관).
 
 ```bash
 .\mvnw.cmd spring-boot:run
