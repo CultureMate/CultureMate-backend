@@ -4,6 +4,7 @@ import com.team.cultureevents.features.auth.service.CurrentMemberService;
 import com.team.cultureevents.features.places.domain.dto.PlaceCandidateDTO;
 import com.team.cultureevents.features.places.service.PlacesService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,10 +12,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.List;
 
 @RestController
 public class PlacesController {
+
+    // 같은 사진을 다시 띄울 때 브라우저가 리다이렉트를 재사용해 구글 호출이 반복되지 않게 한다.
+    // 구글 정책상 사진 주소를 오래 보관하면 안 되므로 짧게 두고, 공용 캐시에는 남기지 않는다.
+    private static final CacheControl PHOTO_REDIRECT_CACHE = CacheControl.maxAge(Duration.ofHours(1)).cachePrivate();
 
     private final PlacesService placesService;
     private final CurrentMemberService currentMember;
@@ -78,6 +84,9 @@ public class PlacesController {
     ) {
         long memberId = currentMember.requireMember(request).getMemberId();
         String photoUri = placesService.resolvePhotoUri(name, maxWidthPx, memberId);
-        return ResponseEntity.status(HttpStatus.FOUND).location(URI.create(photoUri)).build();
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(photoUri))
+                .cacheControl(PHOTO_REDIRECT_CACHE)
+                .build();
     }
 }
