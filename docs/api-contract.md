@@ -472,7 +472,61 @@ GET /api/places/photo?name=places/ChIJ.../photos/AeI...&maxWidthPx=400
 | DELETE | `/api/courses/{courseId}` | `204` |
 
 목록 항목: `courseId`, `title`, `favorited`, `favoritedAt`, `version`, `stopCount`,
-`firstEventTitle`, `firstEventImageUrl`, `shared`, `createdAt`, `updatedAt`.
+`firstEventTitle`, `firstEventImageUrl`, `previewStops`, `shared`, `createdAt`, `updatedAt`.
+`firstEventTitle`, `firstEventImageUrl`은 기존 프론트 호환을 위해 유지합니다.
+
+`previewStops`는 실제 코스 순서(`stopOrder`)대로 최대 4개를 반환합니다. 행사 스탑은 저장된 스냅샷의
+`eventId`, `eventTitle`, `eventImageUrl`을 각각 `eventId`, `name`, `imageUrl`로 사용합니다. 카페·음식점 스탑은
+목록 조회에서 Google Places를 추가 호출하지 않고 저장된 `placeId`만 반환하며, `name`, `imageUrl`은 `null`입니다.
+장소 스탑은 프론트에서 타입별 기본 이미지 또는 아이콘으로 표시하고, 실제 장소명·사진은 코스 상세 등 필요한
+시점에 `/api/places/details`, `/api/places/photo`로 조회합니다.
+
+```json
+{
+  "courseId": 1,
+  "title": "서울 문화 산책",
+  "stopCount": 7,
+  "previewStops": [
+    {
+      "stopOrder": 0,
+      "type": "restaurant",
+      "eventId": null,
+      "placeId": "ChIJ_restaurant_1",
+      "name": null,
+      "imageUrl": null
+    },
+    {
+      "stopOrder": 1,
+      "type": "event",
+      "eventId": "https://culture.seoul.go.kr/...",
+      "placeId": null,
+      "name": "행사 1",
+      "imageUrl": "https://..."
+    },
+    {
+      "stopOrder": 2,
+      "type": "cafe",
+      "eventId": null,
+      "placeId": "ChIJ_cafe_1",
+      "name": null,
+      "imageUrl": null
+    },
+    {
+      "stopOrder": 3,
+      "type": "restaurant",
+      "eventId": null,
+      "placeId": "ChIJ_restaurant_2",
+      "name": null,
+      "imageUrl": null
+    }
+  ]
+}
+```
+
+`stopCount`가 4보다 크면 프론트는 `stopCount - previewStops.length`를 `+N`으로 표시합니다. 예를 들어
+전체 스탑이 7개이면 앞의 4개 스탑을 미리보기로 표시하고 `+3`을 붙입니다. `+N`은 사진을 가져오지 못했다는
+뜻이 아니라 목록 카드에서 생략된 나머지 스탑 수입니다. 목록 미리보기 때문에 `photoName`을 저장하거나
+Place Details/Photo를 미리 호출하지 않습니다.
 
 상세에는 위 기본 정보와 `shareId`, `stops`가 포함됩니다. 각 스탑은 `stopOrder`, `type`, `eventId`, `placeId`와
 행사인 경우 저장 당시의 `eventTitle`, `eventCategory`, `eventDistrict`, `eventPlace`, `eventStartDate`, `eventEndDate`,
