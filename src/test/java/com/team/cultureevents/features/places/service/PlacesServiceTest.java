@@ -13,10 +13,13 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -150,25 +153,81 @@ class PlacesServiceTest {
     // --- 두 행사 사이 구간 검색 ---
 
     @Test
-    void recommendBetweenEventsUsesMidpointAndHalfDistanceAsRadius() {
+    void closeEventsSearchOnceAtMidpointWithHalfDistanceAsRadius() {
         when(eventService.getDetail("e1")).thenReturn(eventAt("e1", 37.0, 127.0));
-        when(eventService.getDetail("e2")).thenReturn(eventAt("e2", 37.0, 127.02));
+        when(eventService.getDetail("e2")).thenReturn(eventAt("e2", 37.0, 127.01));
         when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20), eq(1L)))
                 .thenReturn(List.of());
 
         service.recommendBetweenEvents("e1", "e2", "cafe", 1L);
 
-        double expectedDistance = PlacesService.haversineMeters(37.0, 127.0, 37.0, 127.02);
+        double expectedDistance = PlacesService.haversineMeters(37.0, 127.0, 37.0, 127.01);
+        assertTrue(expectedDistance <= PlacesService.MIDPOINT_SEARCH_MAX_DISTANCE_METERS);
         int expectedRadius = (int) Math.round(expectedDistance / 2);
 
         ArgumentCaptor<Double> lat = ArgumentCaptor.forClass(Double.class);
         ArgumentCaptor<Double> lng = ArgumentCaptor.forClass(Double.class);
-        verify(placesClient).searchNearby(lat.capture(), lng.capture(), eq(List.of("cafe")), eq(expectedRadius), eq(20), eq(1L));
+        verify(placesClient, times(1)).searchNearby(lat.capture(), lng.capture(), eq(List.of("cafe")), eq(expectedRadius), eq(20), eq(1L));
+        verify(placesClient, times(1)).searchNearby(anyDouble(), anyDouble(), any(), anyInt(), anyInt(), anyLong());
 
-        // double은 이진 부동소수점이라 (127.0 + 127.02) / 2 가 정확히 127.01이 아니라
-        // 127.00999999999999로 나온다. 좌표는 오차 허용 범위로 비교한다.
+        // double은 이진 부동소수점이라 (127.0 + 127.01) / 2 가 정확히 127.005가 아닐 수 있다.
+        // 좌표는 오차 허용 범위로 비교한다.
         assertEquals(37.0, lat.getValue(), 1e-9);
-        assertEquals(127.01, lng.getValue(), 1e-9);
+        assertEquals(127.005, lng.getValue(), 1e-9);
+    }
+
+    @Test
+    void distantEventsSearchNearEachEventInsteadOfMidpoint() {
+        when(eventService.getDetail("e1")).thenReturn(eventAt("e1", 37.5, 127.0));
+        when(eventService.getDetail("e2")).thenReturn(eventAt("e2", 37.5, 127.03));
+        when(placesClient.searchNearby(anyDouble(), anyDouble(), eq(List.of("cafe")), anyInt(), eq(20), eq(1L)))
+                .thenReturn(List.of());
+
+        service.recommendBetweenEvents("e1", "e2", "cafe", 1L);
+
+        verify(placesClient).searchNearby(37.5, 127.0, List.of("cafe"), PlacesService.NEAR_EVENT_RADIUS_METERS, 20, 1L);
+        verify(placesClient).searchNearby(37.5, 127.03, List.of("cafe"), PlacesService.NEAR_EVENT_RADIUS_METERS, 20, 1L);
+        verify(placesClient, times(2)).searchNearby(anyDouble(), anyDouble(), any(), anyInt(), anyInt(), anyLong());
+    }
+
+    @Test
+    void distantEventsAlternateCandidatesNearEachEventAndDropDuplicatesAndBacktracking() {
+        when(eventService.getDetail("e1")).thenReturn(eventAt("e1", 37.5, 127.0));
+        when(eventService.getDetail("e2")).thenReturn(eventAt("e2", 37.5, 127.03));
+        PlaceCandidateDTO duplicate = located("dup", 4.0, 37.5, 127.027);
+        when(placesClient.searchNearby(eq(37.5), eq(127.0), eq(List.of("cafe")), anyInt(), eq(20), eq(1L)))
+                .thenReturn(List.of(
+                        located("a1", 4.9, 37.5, 127.002),
+                        located("a2", 4.8, 37.5, 127.003),
+                        located("a3", 4.7, 37.5, 127.004),
+                        located("behindA", 5.0, 37.5, 126.992),
+                        duplicate));
+        when(placesClient.searchNearby(eq(37.5), eq(127.03), eq(List.of("cafe")), anyInt(), eq(20), eq(1L)))
+                .thenReturn(List.of(
+                        located("b1", 4.6, 37.5, 127.028),
+                        located("b2", 4.5, 37.5, 127.026),
+                        duplicate));
+
+        var result = service.recommendBetweenEvents("e1", "e2", "cafe", 1L);
+
+        assertEquals(List.of("a1", "b1", "a2", "b2", "a3", "dup"),
+                result.stream().map(PlaceCandidateDTO::name).toList());
+        assertEquals(List.of("e1", "e2", "e1", "e2", "e1", "e2"),
+                result.stream().map(PlaceCandidateDTO::nearEventId).toList());
+    }
+
+    @Test
+    void alternationFillsFromRemainingSideWhenOneSideRunsOut() {
+        var ranked = List.of(
+                ranked("b1", 4.9, "e2"), ranked("a1", 4.8, "e1"), ranked("b2", 4.7, "e2"), ranked("b3", 4.6, "e2"));
+
+        var result = PlacesService.alternateByNearEvent(ranked, "e1", 3);
+
+        assertEquals(List.of("b1", "a1", "b2"), result.stream().map(PlaceCandidateDTO::name).toList());
+    }
+
+    private static PlaceCandidateDTO ranked(String name, double score, String nearEventId) {
+        return located(name, 4.0, 37.5, 127.0).ranked(0, score).near(nearEventId);
     }
 
     @Test

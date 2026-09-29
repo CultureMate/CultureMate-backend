@@ -15,7 +15,8 @@ public record PlaceCandidateDTO(
         Boolean openNow,
         java.util.List<String> openingHours,
         Double detourMeters,
-        Double recommendationScore
+        Double recommendationScore,
+        String nearEventId
 ) {
     public record AuthorAttribution(String displayName, String uri, String photoUri) {}
 
@@ -29,11 +30,18 @@ public record PlaceCandidateDTO(
             String photoName, String photoAttribution, String businessStatus, Boolean openNow) {
         this(placeId, name, address, rating, userRatingCount, latitude, longitude, mapUrl,
                 photoName, photoAttribution == null ? java.util.List.of() : java.util.List.of(
-                        new AuthorAttribution(photoAttribution, null, null)), businessStatus, openNow, java.util.List.of(), null, null);
+                        new AuthorAttribution(photoAttribution, null, null)), businessStatus, openNow, java.util.List.of(), null, null, null);
     }
 
     public PlaceCandidateDTO ranked(double detour, double score) {
         return new PlaceCandidateDTO(placeId, name, address, rating, userRatingCount, latitude,
-                longitude, mapUrl, photoName, authorAttributions, businessStatus, openNow, openingHours, detour, score);
+                longitude, mapUrl, photoName, authorAttributions, businessStatus, openNow, openingHours, detour, score,
+                nearEventId);
+    }
+
+    public PlaceCandidateDTO near(String eventId) {
+        return new PlaceCandidateDTO(placeId, name, address, rating, userRatingCount, latitude,
+                longitude, mapUrl, photoName, authorAttributions, businessStatus, openNow, openingHours, detourMeters,
+                recommendationScore, eventId);
     }
 }
