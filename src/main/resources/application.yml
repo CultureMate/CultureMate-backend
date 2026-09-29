@@ -18,6 +18,9 @@ spring:
       hibernate:
         jdbc:
           time_zone: Asia/Seoul
+  flyway:
+    # MariaDB용 마이그레이션은 docker 프로필에서만 실행한다. 로컬 H2는 ddl-auto로 관리.
+    enabled: false
   h2:
     console:
       enabled: true

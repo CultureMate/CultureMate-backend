@@ -1,0 +1,69 @@
+name: culturemate
+
+# 로컬 개발(H2)도 같은 .env를 읽으므로, Docker에서만 다른 주소는 여기서 정한다.
+# 값이 빈 채로 넘어가면 application.yml 기본값이 적용되지 않아 기본값이 필요한 값은 여기서 직접 준다.
+services:
+  frontend:
+    build:
+      context: ${FRONTEND_DIR:-../CultureMate-frontend}
+      args:
+        REACT_APP_KAKAO_MAP_KEY: ${KAKAO_MAP_KEY:-}
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  backend:
+    build: .
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:mariadb://db:3306/${DB_NAME:-culturemate}
+      DB_USERNAME: ${DB_USERNAME:-culturemate}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD를 .env에 넣어 주세요}
+      SEOUL_API_KEY: ${SEOUL_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      KAKAO_REST_KEY: ${KAKAO_REST_KEY:-}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-}
+      KAKAO_ADMIN_KEY: ${KAKAO_ADMIN_KEY:-}
+      KAKAO_REDIRECT_URI: ${DOCKER_KAKAO_REDIRECT_URI:-http://localhost/api/auth/kakao/callback}
+      FRONTEND_URL: ${DOCKER_FRONTEND_URL:-http://localhost}
+      FRONTEND_ORIGIN: ${DOCKER_FRONTEND_URL:-http://localhost}
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+    ports:
+      # 개발 확인용. 화면과 로그인은 frontend(80)의 /api를 거친다.
+      - "${BACKEND_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # alpine JRE 이미지에는 curl이 없다.
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      start_period: 30s
+      retries: 10
+
+  db:
+    # Spring Boot 3.3의 Flyway가 지원하는 LTS 버전
+    image: mariadb:10.11
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-culturemate}
+      MARIADB_USER: ${DB_USERNAME:-culturemate}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD를 .env에 넣어 주세요}
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+    ports:
+      # PC에 설치된 MariaDB/MySQL(3306)과 겹치지 않게 기본값을 3308로 둔다.
+      - "${DB_PORT:-3308}:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db-data:
