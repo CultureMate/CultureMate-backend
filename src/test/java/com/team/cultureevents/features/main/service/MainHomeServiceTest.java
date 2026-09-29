@@ -58,9 +58,27 @@ class MainHomeServiceTest {
     }
 
     @Test
-    void hotEventsRankByViewCountIncludingAliases() {
+    void hotEventsExcludeEndedEvents() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
         when(cache.getIfFresh()).thenReturn(List.of(
-                event("plain", "중구", LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 2)),
+                event("ended", "중구", today.minusDays(10), today.minusDays(1)),
+                event("ends-today", "중구", today.minusDays(3), today),
+                event("upcoming", "중구", today.plusDays(3), today.plusDays(5))));
+        when(views.findAll()).thenReturn(List.of(
+                new EventViewEntity("ended", 100),
+                new EventViewEntity("ends-today", 2),
+                new EventViewEntity("upcoming", 1)));
+
+        var hot = service.hotEvents(6);
+
+        assertEquals(List.of("ends-today", "upcoming"), hot.events().stream().map(e -> e.eventId()).toList());
+    }
+
+    @Test
+    void hotEventsRankByViewCountIncludingAliases() {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
+        when(cache.getIfFresh()).thenReturn(List.of(
+                event("plain", "중구", today.plusDays(2), today.plusDays(3)),
                 merged("canonical", "alias")));
         when(views.findAll()).thenReturn(List.of(
                 new EventViewEntity("plain", 40),
@@ -75,8 +93,9 @@ class MainHomeServiceTest {
     }
 
     private static SeoulEvent merged(String canonicalId, String aliasId) {
+        LocalDate today = LocalDate.now(ZoneId.of("Asia/Seoul"));
         return new SeoulEvent(canonicalId, canonicalId, "공연", "중구", "DDP",
-                "2026-10-01", "2026-10-20", "", "", "", "", null, null, List.of(aliasId));
+                today.plusDays(2).toString(), today.plusDays(21).toString(), "", "", "", "", null, null, List.of(aliasId));
     }
 
     private static SeoulEvent event(String id, String district, LocalDate start, LocalDate end) {

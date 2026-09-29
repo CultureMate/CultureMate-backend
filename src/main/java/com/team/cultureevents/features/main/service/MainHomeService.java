@@ -41,8 +41,10 @@ public class MainHomeService {
 
     public HomeEventsResponseDTO hotEvents(Integer limit) {
         int lim = normalizeLimit(limit);
+        LocalDate today = LocalDate.now(SEOUL);
         Map<String, Integer> views = viewMap();
         List<HomeEventItemDTO> events = loadEvents().stream()
+                .filter(e -> notEnded(e, today))
                 .map(e -> toItem(e, views))
                 .sorted(Comparator
                         .comparingInt(HomeEventItemDTO::viewCount).reversed()
@@ -115,6 +117,13 @@ public class MainHomeService {
                 viewCount(e, views),
                 dDay
         );
+    }
+
+    /** HOT 대상 = 종료일이 오늘 이후(진행 중·예정). 기간이 없거나 뒤집힌 행은 제외. */
+    private static boolean notEnded(SeoulEvent e, LocalDate today) {
+        return EventDates.closedRange(e.startDate(), e.endDate())
+                .map(range -> !range.end().isBefore(today))
+                .orElse(false);
     }
 
     /** '다가오는' 행사 = 오늘 이후 시작(이미 시작한 장기 행사는 제외). 기간이 뒤집힌 행은 제외. */
