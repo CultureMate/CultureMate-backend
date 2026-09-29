@@ -83,4 +83,24 @@ class PlacesControllerTest {
 
         verify(client).getDetails("p1", 1L);
     }
+
+    @Test
+    void photoRedirectIsCachedPrivatelyForOneHour() throws Exception {
+        when(client.resolvePhotoUri("places/p1/photos/abc", 400, 1L)).thenReturn("https://lh3.googleusercontent.com/abc");
+
+        mvc.perform(get("/api/places/photo").param("name", "places/p1/photos/abc"))
+                .andExpect(status().isFound())
+                .andExpect(header().string("Location", "https://lh3.googleusercontent.com/abc"))
+                .andExpect(header().string("Cache-Control", "max-age=3600, private"));
+    }
+
+    @Test
+    void photoErrorsAreNotCached() throws Exception {
+        when(client.resolvePhotoUri("places/p1/photos/abc", 400, 1L)).thenThrow(
+                new BusinessException("PLACES_MEMBER_DAILY_LIMITED", "오늘 사진 호출 한도를 모두 사용했습니다.", HttpStatus.TOO_MANY_REQUESTS));
+
+        mvc.perform(get("/api/places/photo").param("name", "places/p1/photos/abc"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().doesNotExist("Cache-Control"));
+    }
 }
