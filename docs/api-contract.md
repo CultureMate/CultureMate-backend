@@ -185,7 +185,7 @@ upcoming의 자치구: `district` 쿼리 → 없으면 로그인 회원의 거�
 
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
-| GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순. `viewCount`는 대표 ID와 별칭 ID의 합 |
+| GET | `/api/main/hot-events?limit=6` | `200` `{ "events": [...] }` 조회수 내림차순(같으면 제목순). 종료일이 오늘 이전인 행사와 기간 정보가 없는 행사는 제외. `viewCount`는 대표 ID와 별칭 ID의 합 |
 | GET | `/api/main/upcoming-events?district=&limit=6` | `200` `{ "events": [...], "district": "마포구" 또는 null }` 오늘 이후 시작하는 행사, 시작일 오름차순 |
 
 각 항목: `eventId`, `title`, `category`, `district`, `place`, `startDate`, `endDate`, `imageUrl`, `viewCount`, `dDay`(한국 날짜 기준, 시작일 없으면 `null`).
