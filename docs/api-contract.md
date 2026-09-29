@@ -96,7 +96,7 @@ GET /api/events?district=마포구&category=전시&from=2026-09-21&to=2026-09-30
 |--------|------|------|
 | GET | `/api/auth/kakao/start` | 302 → 카카오. 키 없으면 503 |
 | GET | `/api/auth/kakao/callback` | 성공 `/?login=success`, 취소 `/?login=cancelled` + 세션 쿠키 |
-| GET | `/api/auth/me` | 8번 마이페이지 참고 / 401 |
+| GET | `/api/auth/me` | 8번 마이페이지 참고. 비로그인은 `204`(본문 없음) |
 | POST | `/api/auth/logout` | 204, 쿠키 삭제 |
 
 Redirect URI: `http://localhost:8080/api/auth/kakao/callback`
@@ -167,11 +167,11 @@ OpenAI 읽기 제한은 30초, 출력은 최대 300토큰입니다. 같은 행�
 
 ## 8. 마이페이지 · 완료
 
-세션 쿠키 필요. 없으면 `401`.
+세션 쿠키 필요. 없으면 `401`. 단, `GET /api/auth/me`는 로그인 여부 확인에 쓰므로 세션이 없거나 만료면 `204`(본문 없음)로 응답합니다.
 
 | 메서드 | 경로 | 결과 |
 |--------|------|------|
-| GET | `/api/auth/me` | `{ memberId, nickname, residence, interestCategories, favoriteCount }` |
+| GET | `/api/auth/me` | `{ memberId, nickname, residence, interestCategories, favoriteCount }`. 비로그인 `204` |
 | PUT | `/api/auth/me` body `{ "nickname"?, "residence"?, "interestCategories"? }` | `200` 수정된 정보(GET과 같은 형태) |
 | DELETE | `/api/auth/me` | `204`. 카카오 연결 끊기 후 세션·관심 행사·회원 삭제, 쿠키 만료 |
 
