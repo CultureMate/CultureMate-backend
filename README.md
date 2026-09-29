@@ -8,8 +8,8 @@
 
 ## 📌 현재 범위
 
-- ✅ **구현됨:** 서울시 문화행사 목록·상세·필터, 관심 행사(찜), 카카오 로그인·세션, 댓글, 조회수, 홈 HOT/근처, 로컬 H2, AI 소개문
-- 📋 **이슈로 남김:** 마이페이지 수정·탈퇴, 상세 보완, Google Places, Docker DB
+- ✅ **구현됨:** 서울시 문화행사 목록·상세·필터, 관심 행사(찜), 카카오 로그인·세션, 댓글, 조회수, 홈 HOT/근처, 로컬 H2, AI 소개문, Docker 전체 실행(프론트·백엔드·MariaDB)
+- 📋 **이슈로 남김:** 마이페이지 수정·탈퇴, 상세 보완, Google Places
 
 <br>
 
@@ -54,9 +54,38 @@ macOS/Linux는 `./mvnw spring-boot:run` 입니다. 터미널만 있어도 됩니
 
 키가 비면 목록은 `502`, 카카오 시작은 `503`입니다. `.env` · `data/` · `target/` 은 Git에 올리지 않습니다.
 
+### 🐳 전체 Docker 실행 (프론트·백엔드·MariaDB)
+
+JDK·Node 없이 Docker Desktop만으로 전체 서비스를 띄웁니다. 두 저장소를 같은 폴더에 받습니다.
+
+```text
+CultureMate-backend/    ← 여기서 docker compose 실행
+CultureMate-frontend/
+```
+
+폴더 이름이나 위치가 다르면 `.env`에 `FRONTEND_DIR`(이 폴더 기준 상대 경로)을 넣습니다. `.env`에는 `DB_PASSWORD`가 꼭 있어야 하고, 지도를 보려면 `KAKAO_MAP_KEY`(카카오맵 JavaScript 키)도 넣습니다.
+
+```bash
+docker compose up -d --build
+```
+
+- 📱 화면: http://localhost (API는 같은 주소의 `/api`로 Nginx가 백엔드에 넘깁니다)
+- ❤️ 헬스: http://localhost/api/health
+- 로그 보기: `docker compose logs -f backend`
+- 끄기: `docker compose down` (데이터 유지) · DB까지 초기화: `docker compose down -v`
+
+처음 빌드는 의존성 다운로드와 양쪽 테스트 때문에 몇 분 걸립니다. 테스트가 실패하면 이미지가 만들어지지 않습니다. `KAKAO_MAP_KEY` 등 프론트 값은 빌드할 때 화면 파일에 들어가므로, 바꾼 뒤에는 `--build`로 다시 빌드합니다. 그 밖의 키는 이미지에 넣지 않고 실행할 때 `.env`에서 전달합니다.
+
+카카오 로그인·지도는 화면 주소가 `http://localhost`로 바뀌므로 카카오 디벨로퍼스 콘솔에 아래를 **추가로** 등록합니다(기존 로컬 개발용 값은 그대로 둡니다).
+
+- 로그인 Redirect URI: `http://localhost/api/auth/kakao/callback`
+- 플랫폼 Web 사이트 도메인: `http://localhost`
+
+`.env`의 `FRONTEND_URL`·`FRONTEND_ORIGIN`·`KAKAO_REDIRECT_URI`는 로컬 개발용이라 Docker 실행에서는 쓰지 않습니다. Docker 주소를 바꿀 때만 `DOCKER_FRONTEND_URL`·`DOCKER_KAKAO_REDIRECT_URI`를 넣습니다. 80·8080 포트가 이미 쓰이면 `FRONTEND_PORT`·`BACKEND_PORT`로 바꾸고, 화면 포트를 바꿨다면 `DOCKER_FRONTEND_URL`과 카카오 콘솔 주소도 같은 포트로 맞춥니다. `PLACES_*` 호출 제한은 Docker에서 기본값으로 동작합니다.
+
 ### 🐬 MariaDB로 실행 (docker 프로필)
 
-기본 실행은 위처럼 H2입니다. MariaDB는 Docker로 띄우고 `docker` 프로필일 때만 씁니다.
+`mvnw`로 백엔드만 실행하면 H2를 씁니다. 백엔드는 로컬에서 돌리면서 DB만 Docker MariaDB로 쓰려면 `docker` 프로필을 켭니다.
 
 ```bash
 docker compose up -d db
